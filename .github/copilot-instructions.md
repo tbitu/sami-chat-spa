@@ -1,60 +1,145 @@
-## Sami Chat SPA — Copilot Instructions
+## Sámi Chat SPA — AI Coding Agent Instructions
 
-Goal: Help developers be productive quickly. Focus on the SPA frontend and how it coordinates with the local translation backend.
+**Goal**: Help AI coding agents be immediately productive in this Northern Sami AI chat application.
 
-High-level architecture
-- Frontend (this repo): React + TypeScript SPA built with Vite. Entry: `src/main.tsx`, UI: `src/App.tsx` and `src/components/*`.
-- Services: `src/services/` contains orchestration and provider adapters:
-  - `chat-orchestrator.ts` — central flow: translate (sme→nor), call AI provider, translate back (nor→sme).
-  - `translation.ts` — client side API wrapper to local TartuNLP backend (default `http://localhost:8000/translation/v2`).
-  - `chatgpt.ts` / `gemini.ts` — provider implementations. They implement the `AIService` interface in `src/types/chat.ts`.
-- Utilities: `src/utils/markdown.ts` preserves markdown structure during translation (extract segments, preserve code blocks/links).
+### Architecture Overview
 
-Why some design choices
-- Translations happen locally (TartuNLP backend) to preserve privacy and speed. `translation.ts` prefers a local service but can be configured to use the public TartuNLP API.
-- Markdown is split into segments before translation to avoid corrupting code blocks, tables and inline elements. See `extractMarkdownSegments`, `applyTranslations` in `src/utils/markdown.ts`.
-- Chat sessions are kept in-memory in `ChatOrchestrator` (no server-side session store). Session lifecycle: `createSession`, `sendMessage`/`sendMessageStreaming`, `clearSession`.
+**Translation Flow (Core Pattern)**:
+```
+User (Sami) → translate sme→nor → AI provider (Norwegian) → translate nor→sme → User (Sami)
+```
 
-Developer workflows (concrete)
-- Install and run frontend (Vite):
-  - npm install
-  - npm run dev  (open http://localhost:5173)
-- Build: `npm run build` (runs `tsc` then `vite build`). Preview: `npm run preview`.
-- Lint: `npm run lint` (ESLint configured for ts/tsx).
--- The translation backend is a separate repository/service and must be started independently. Default frontend translation URL: `http://localhost:8000/translation/v2`.
+**Key Components**:
+- **Frontend**: React + TypeScript SPA built with Vite (entry: `src/main.tsx`)
+- **Orchestration**: `ChatOrchestrator` in `src/services/chat-orchestrator.ts` coordinates translation → AI call → translation
+- **AI Providers**: `gemini.ts` and `chatgpt.ts` implement `AIService` interface from `src/types/chat.ts`
+- **Translation**: `src/services/translation.ts` wraps TartuNLP backend (default: `http://localhost:8000/translation/v2`)
+- **Markdown Preservation**: `src/utils/markdown.ts` extracts/restores structure during translation (code blocks, tables, links preserved)
+- **Streaming**: `ChunkAggregator` (`src/utils/chunk-aggregator.ts`) batches streaming chunks for efficient translation
 
-Note: The translation backend is external to this repository. Start it from the backend repository (or a deployed service). See the project's top-level `README.md` and `LOCAL_TRANSLATION_SETUP.md` for links and instructions.
+**Why These Choices**:
+- **Local translation**: TartuNLP backend runs locally (GPU-accelerated) for privacy and speed. Can fall back to public API.
+- **Markdown segmentation**: Prevents corruption of code blocks, tables, and inline formatting during translation.
+- **In-memory sessions**: No server-side session store; sessions persist in browser `sessionStorage` (see `saveSessionToStorage` in orchestrator).
+- **Sequential chunk processing**: Queue-based to prevent race conditions and duplicate translations (see `ChunkAggregator` comments).
 
-Important patterns and conventions
-- Environment
-  - Vite `import.meta.env.VITE_TRANSLATION_API_URL` is used by `src/services/translation.ts`. Scripts may fall back to `process.env.VITE_TRANSLATION_API_URL` for node-side runs.
-- Error handling
-  - Services generally throw Errors with descriptive messages; UI components show translated Sami error strings (see `ChatInterface.tsx` message error handling).
-- Streaming
-  - Both `ChatGPTService` and `GeminiService` provide `streamMessage` implementations; orchestrator uses a `ChunkAggregator` (`src/utils/chunk-aggregator.ts`) to batch/translate chunks.
-- Adding providers
-  - Add a service in `src/services/` implementing `AIService` and add the enum/type in `src/types/chat.ts`. Update UI provider dropdown in `ChatInterface.tsx`.
+### Developer Workflows
 
-Key files to inspect for changes or examples
-- `src/services/translation.ts` — network retries, API selection (`local-llm` vs `tartunlp-public`), markdown-preserving translation functions used by orchestrator.
-- `src/services/chat-orchestrator.ts` — orchestrates translation, provider calls, streaming handling and aggregator usage.
-- `src/utils/markdown.ts` — canonical example of how to preserve markdown while translating; reuse these helpers rather than ad-hoc string replacements.
-- `src/services/gemini.ts` — example of robust streaming JSON parsing and helpful API error messages.
+**Setup & Run**:
+```bash
+npm install
+npm run dev          # Start dev server → http://localhost:5173
+npm run build        # TypeScript compile + Vite build
+npm run preview      # Preview production build
+npm run lint         # ESLint (ts/tsx)
+npm test             # Run Vitest tests
+```
 
-Quick editing guidelines for Copilot/AI changes
-- When changing translation flow, keep markdown extraction/restoration intact. Tests or manual checks should include code blocks, tables, links and inline formatting.
-- If you add environment variables, prefer `VITE_` prefix (Vite convention) and document usage in `README.md`.
-- Preserve existing user-visible Sami strings in `src/i18n/locales/*.json` when touching UI.
+**External Dependency**: Translation backend must run separately (not in this repo). Start it from backend repo; it typically runs on `http://localhost:8000`. Override with `VITE_TRANSLATION_API_URL` env var.
 
-Local testing checklist
-- Start backend translation server (see the translation backend repository's README).
-- Run `npm run dev` and open the app. Verify: entering Sami text -> translated -> AI provider response -> Sami translation returned; test both Gemini and ChatGPT if keys available.
+**Debugging Translation Flow**:
+- Check `archive/tools/*.mjs` for standalone test scripts (e.g., `test-translation-batch.mjs` tests batch translation API)
+- Use `NODE_ENV=development npm run dev` to see verbose console logs in browser
+- Translation service must be configured via `configureTranslationService()` before use (throws if unconfigured)
 
-If something is missing
-- If you need runtime secrets (API keys), the app expects them to be entered in the UI (they are kept only in browser memory). See `src/components/ApiConfig.tsx` for where keys are stored.
+### Critical Patterns
 
-Questions for the repo owner
-- Are there recommended Gemeni/OpenAI model names to prefer by default? (`gemini.ts` has a `DEFAULT_MODEL`)
-- Any CI or test commands to add here beyond `npm run lint` and `npm run build`?
+**Markdown Preservation** (MUST PRESERVE):
+```typescript
+// CORRECT: Use markdown utilities
+import { extractMarkdownSegments, reconstructFromSegments } from '../utils/markdown';
+const segments = extractMarkdownSegments(text);
+// ...translate segments...
+const result = reconstructFromSegments(segments, translations);
 
-End of instructions.
+// WRONG: Direct string manipulation breaks formatting
+const translated = text.replace(/.../, ...); // ❌ Will corrupt markdown
+```
+
+**Streaming + Translation**:
+```typescript
+// ChunkAggregator handles batching for translation efficiency
+const aggregator = new ChunkAggregator({
+  minChunkSize: 150,  // Accumulate ~2-3 sentences before translating
+  onChunkReady: async (chunk) => {
+    const translated = await translatePreserveFormattingChunk(chunk, 'nor-sme');
+    callback.onChunk(translated);
+  }
+});
+// Natural breaks: sentence ends (. ! ?), paragraphs (\n\n), table rows
+// See hasNaturalBreak() in chunk-aggregator.ts
+```
+
+**Session Persistence**:
+- Both `ChatOrchestrator` sessions AND `ChatInterface` display messages persist to `sessionStorage`
+- Keys: `sami_chat_session` (orchestrator), `sami_chat_display_messages` (UI)
+- Always sanitize placeholders when restoring: `sanitizePlaceholders(content)`
+
+**Translation Service Configuration**:
+```typescript
+// Must configure before first use (throws if not configured)
+configureTranslationService({
+  service: 'local-llm' | 'tartunlp-public',
+  apiUrl?: string  // Optional override
+});
+```
+
+**Error Handling**:
+- Services throw descriptive `Error` objects (not custom error types)
+- UI shows Sami-translated errors from `src/i18n/locales/sme.json`
+- Translation service retries up to 3 times with 25s client timeout
+
+**Environment Variables**:
+- Use `VITE_` prefix for Vite: `import.meta.env.VITE_TRANSLATION_API_URL`
+- Scripts use `process.env.VITE_TRANSLATION_API_URL` (Node context)
+
+**i18n (Multilingual UI)**:
+- Locales: `src/i18n/locales/{sme,nb,en}.json` (Northern Sami, Norwegian, English)
+- **CRITICAL**: Always preserve Sami strings when editing UI. Use `useTranslation()` hook and reference keys like `t('chatInterface.send')`.
+- Default language: Northern Sami (`sme`), saved to `localStorage` as `i18nextLng`
+
+### Adding New Features
+
+**New AI Provider**:
+1. Create `src/services/myprovider.ts` implementing `AIService` interface
+2. Add provider type to `AIProvider` enum in `src/types/chat.ts`
+3. Import and instantiate in `ChatOrchestrator` constructor
+4. Add to provider dropdown in `ChatInterface.tsx`
+
+**New Translation Direction**:
+1. Add to `TranslationDirection` type in `translation.ts`
+2. Update `translateText()` to handle new `src`/`tgt` codes
+3. Test with TartuNLP backend (check model availability)
+
+### Key Files Reference
+
+- `chat-orchestrator.ts`: Session lifecycle, translation coordination, streaming aggregation
+- `translation.ts`: Retry logic, markdown-preserving functions (`translateWithMarkdown`, `translatePreserveFormattingChunk`)
+- `markdown.ts`: Segment extraction (`extractMarkdownSegments`, `extractTranslationUnits`), restoration (`reconstructFromSegments`)
+- `chunk-aggregator.ts`: Streaming batch logic, natural break detection, sequential queue processing
+- `gemini.ts`: Robust streaming JSON parsing (handles partial/malformed chunks)
+- `ChatInterface.tsx`: Display message state, streaming UI updates, sessionStorage persistence
+
+### Testing
+
+- **Unit tests**: Vitest configured (`npm test`). See `archive/tests/` for historical test examples.
+- **Manual testing**: Start backend → `npm run dev` → enter Sami text → verify round-trip translation
+- **Translation API testing**: Use scripts in `archive/tools/` (e.g., `node archive/tools/test-translation-batch.mjs`)
+
+### Common Pitfalls
+
+1. **Forgetting to configure translation service**: Always call `configureTranslationService()` before translation operations
+2. **Breaking markdown**: Never use regex replacements on markdown text; use `markdown.ts` utilities
+3. **Chunk aggregator state**: ChunkAggregator is stateful; create new instance per streaming session
+4. **Race conditions in streaming**: Don't translate chunks in parallel; use aggregator's sequential queue
+5. **Placeholder leakage**: Always call `sanitizePlaceholders()` on content before displaying (removes leftover `@@BOLD_1@@` markers)
+
+### Archive Notes
+
+Historical documentation moved to `archive/notes/`:
+- `ARCHITECTURE.md`: Detailed component diagrams
+- `CHUNKING_EXPLANATION.md`: Deep dive on streaming chunk handling
+- `LOCAL_TRANSLATION_SETUP.md`: Backend setup instructions
+- `STREAMING_IMPLEMENTATION.md`: Streaming flow diagrams
+
+For questions about design decisions or edge cases, check these first.

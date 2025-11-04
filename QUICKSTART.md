@@ -1,168 +1,76 @@
-# Sámi Chat - Quick Start Guide
+# Sámi Chat - Quick Start
 
-## 🚀 Quick Start
+## 🚀 Get Started
 
-1. **Install dependencies**
+1. **Start the translation backend** (separate service - see its README)
+2. **Install and run this frontend:**
    ```bash
    npm install
-   ```
-
-2. **Start development server**
-   ```bash
    npm run dev
    ```
+3. **Open `http://localhost:5173`**
+4. **Enter your API key** (Gemini or OpenAI)
+5. **Start chatting in Northern Sami!**
 
-3. **Open browser**
-   - Navigate to `http://localhost:5173`
-   - Enter your API key(s) when prompted
-   - Start chatting in Northern Sami!
+## 🔑 Get an API Key
 
-## 📋 API Key Setup
+Choose **one** of these:
 
-### Google Gemini API
-1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. Sign in with your Google account
-3. Click "Create API Key"
-4. Copy the key (starts with `AIza...`)
+**Google Gemini** (recommended for beginners)
+- Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+- Click "Create API Key"
+- Copy the key (starts with `AIza...`)
 
-### OpenAI ChatGPT API
-1. Visit [OpenAI Platform](https://platform.openai.com/api-keys)
-2. Sign in or create an account
-3. Click "Create new secret key"
-4. Copy the key (starts with `sk-...`)
+**OpenAI ChatGPT**
+- Visit [OpenAI Platform](https://platform.openai.com/api-keys)
+- Click "Create new secret key"
+- Copy the key (starts with `sk-...`)
 
-**Note**: You only need ONE of these APIs to use the application.
+## 💬 Using the App
 
-## 🎯 Usage Tips
+- **Send messages**: Type in Northern Sami, press "Sádde" or Enter
+- **Switch AI**: Use dropdown to change between Gemini and ChatGPT
+- **Clear chat**: Click "Čuohcat" to reset conversation
+- **Markdown**: Supports **bold**, *italic*, `code`, lists, tables, etc.
 
-### Basic Chat
-- Type your message in Northern Sami
-- Press "Sádde" (Send) or hit Enter
-- Wait for the AI response (also in Sami)
+## 🌐 How It Works
 
-### Provider Selection
-- Use the dropdown in the header to switch between Gemini and ChatGPT
-- Switching providers creates a new conversation session
+```
+Sami → Translate to Norwegian → AI → Translate to Sami → You
+```
 
-### Clear History
-- Click "Čuohcat" button to clear all messages
-- This resets the conversation but keeps your API keys
+Translation happens automatically using local TartuNLP models.
 
-### Markdown Support
-The app supports rich formatting:
-- **Bold**: `**text**`
-- *Italic*: `*text*`
-- Code: `` `code` ``
-- Code blocks: ``` ```code``` ```
-- Lists, tables, headings, and more!
-
-## 🔧 Development Commands
+## 🔧 Development
 
 ```bash
-# Start dev server with hot reload
-npm run dev
-
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
-
-# Run linter
-npm run lint
+npm run dev      # Dev server with hot reload
+npm run build    # Production build
+npm run preview  # Preview production build
+npm run lint     # Run ESLint
 ```
-
-## 🌐 Translation Flow
-
-```
-User Input (Sami)
-    ↓
-TartuNLP Translation (Sami → Norwegian)
-    ↓
-AI Provider (Gemini or ChatGPT)
-    ↓
-TartuNLP Translation (Norwegian → Sami)
-    ↓
-Display to User (Sami)
-```
-
-## ⚙️ Technical Details
-
-### Technology Stack
-- **Frontend**: React 18 + TypeScript
-- **Build Tool**: Vite
-- **UI**: Custom CSS with dark/light mode
-- **Markdown**: Marked + DOMPurify
-- **APIs**: Gemini, OpenAI, TartuNLP
-
-### Project Structure
-```
-src/
-├── components/         # React UI components
-├── services/          # API integration services
-├── utils/             # Utility functions
-├── types/             # TypeScript types
-├── App.tsx            # Main app component
-└── main.tsx           # Entry point
-```
-
-### Key Features
-- **Session Management**: Maintains conversation context
-- **Markdown Preservation**: Keeps formatting through translation
-- **Privacy**: API keys stored locally only
-- **Responsive**: Works on mobile and desktop
-- **Bilingual**: Sami interface with Norwegian backend
 
 ## 🐛 Troubleshooting
 
-### API Key Issues
-- Make sure your API key is valid and has credits
-- Check the browser console for error messages
-- Gemini keys start with `AIza...`
-- OpenAI keys start with `sk-...`
+**API key not working?**
+- Check it's valid and has credits
+- Gemini keys: `AIza...`
+- OpenAI keys: `sk-...`
 
-### Translation Errors
-- TartuNLP API may have occasional downtime
-- Complex markdown may require retry
-- Check your internet connection
+**Translation errors?**
+- Ensure backend is running on `http://localhost:8000`
+- Check browser console for errors
 
-### Build Issues
+**Build issues?**
 ```bash
-# Clear node_modules and reinstall
 rm -rf node_modules package-lock.json
 npm install
-
-# Clear Vite cache
-rm -rf node_modules/.vite
-npm run dev
 ```
 
-## 📝 Example Conversations
+## 📝 Example
 
-**User**: Buorre beaivi! Maid don sáhtát veahkehit?
-**AI**: Bures boahtin! Mun lean veahkkehat AI. Mun sáhttán veahkehit máŋggain áššiin...
-
-**User**: Makkár dáhpáhusat leat odne?
-**AI**: Mu dieđut bohtet jagi 2023 rájes, muhto mun sáhttán gullat ja vástidit jearaldagaide...
-
-## 🤝 Contributing
-
-Want to improve the app? Some ideas:
-- Add more AI providers
-- Improve markdown handling
-- Add conversation export
-- Enhance UI/UX
-- Add more Sami language variants
-
-## 📄 License
-
-[Add your license information]
-
-## 🆘 Support
-
-- Report issues on GitHub
-- Check the README for detailed documentation
-- Contact [your contact info]
+**You**: Buorre beaivi! Maid don sáhtát veahkehit?  
+**AI**: Bures boahtin! Mun sáhttán veahkehit ollu iešguđet áššiid...
 
 ---
 
