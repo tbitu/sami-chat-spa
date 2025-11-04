@@ -1,6 +1,6 @@
 # Sámi Chat SPA
 
-Chat with AI assistants (Google Gemini and OpenAI ChatGPT) in Northern Sami. The app translates your Sami messages to Norwegian, sends them to the AI, and translates responses back to Sami using local TartuNLP translation models.
+Chat with AI assistants (Google Gemini and OpenAI ChatGPT) in Northern Sami. The app translates your Sami messages to Norwegian, sends them to the AI, and translates responses back to Sami using TartuNLP translation models.
 
 ## Features
 
@@ -8,7 +8,6 @@ Chat with AI assistants (Google Gemini and OpenAI ChatGPT) in Northern Sami. The
 - 🤖 Support for Google Gemini and OpenAI ChatGPT
 - 📝 Preserves markdown formatting in translations
 - 🔒 API keys stored locally in your browser only
-- ⚡ Fast GPU-accelerated local translation
 
 ## Prerequisites
 
@@ -75,7 +74,6 @@ src/
 
 ## Acknowledgments
 
-- [TartuNLP](https://tartunlp.ai/) for Uralic translation models
-- [Helsinki-NLP](https://github.com/Helsinki-NLP) for OPUS-MT framework
+- [TartuNLP](https://tartunlp.ai/) for Sami translation models
 - Google and OpenAI for AI APIs
 - The Sami language community
