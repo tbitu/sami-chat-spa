@@ -1,0 +1,43 @@
+{
+  "apiConfig": {
+    "title": "API configuration",
+    "description": "Configure which external APIs you'd like to use. You can provide one or both.",
+    "translationServiceLabel": "Translation service",
+    "translationServiceOptions": {
+      "local-llm": "Local LLM (localhost:8000)",
+      "tartunlp-public": "TartuNLP Public API"
+    },
+    "geminiKeyLabel": "Google Gemini API Key (optional)",
+    "openaiKeyLabel": "OpenAI API Key (optional)",
+    "fetchModelsLoading": "Loading models...",
+    "submit": "Start",
+    "errors": {
+      "atLeastOne": "Please provide at least one API key",
+      "geminiFormat": "Gemini API key must start with 'AIza'",
+      "openaiFormat": "OpenAI API key must start with 'sk-'"
+    },
+    "noteTitle": "Note:",
+    "noteBody": "API keys may expose billing and personal data. Keep them secret and only use trusted services."
+  },
+  "chatInterface": {
+    "title": "Sami Chat",
+    "empty": {
+      "welcome": "Welcome!",
+      "hint": "Ask a question to start a conversation."
+    },
+    "streaming": "Receiving response...",
+    "inputPlaceholder": "Type your message here...",
+    "send": "Send"
+  },
+  "message": {
+    "user": "You",
+    "assistant": "Assistant",
+    "originalBadge": "Original",
+    "streamingErrorPrefix": "Error while streaming:"
+  }
+  ,
+  "menu": {
+    "resetPersistence": "Reset persistence",
+    "salke": "Sálke"
+  }
+}

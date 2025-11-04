@@ -1,0 +1,43 @@
+{
+  "apiConfig": {
+    "title": "API-heivehus",
+    "description": "Heivet makkár olgguldas API: id geavahit. Sáhtát válljet ovtta dahje goappašiid.",
+    "translationServiceLabel": "Jorgalanbálvalus",
+    "translationServiceOptions": {
+      "local-llm": "Local LLM (localhost:8000)",
+      "tartunlp-public": "TartuNLP Public API"
+    },
+    "geminiKeyLabel": "Google Gemini API-čoavdda (eavttolaš)",
+    "openaiKeyLabel": "OpenAI API-čoavdda (eavttolaš)",
+    "fetchModelsLoading": "Выгрузка моделей...",
+    "submit": "Start",
+    "errors": {
+      "atLeastOne": "Čális unnimusat ovtta API-čoavdaga",
+      "geminiFormat": "Gemini API-čoavdda ferte álgit \"AIza\"",
+      "openaiFormat": "OpenAI API-čoavdda ferte álgit \"sk-\""
+    },
+    "noteTitle": "Merke:",
+    "noteBody": "API-čoavdagat sáhttet čájehit rehkegiid dahje persovnnalaš dieđuid. Doalat daid čiegusin ja geavat dušše luohtehahtti bálvalusaid."
+  },
+  "chatInterface": {
+    "title": "Sámi Chat",
+    "empty": {
+      "welcome": "Bures boahtin!",
+      "hint": "Buvtte gažaldaga vai beasat álggahit ságastallama."
+    },
+    "streaming": "Vuostáiváldá vástádusa...",
+    "inputPlaceholder": "Čále dieđáhusa dása...",
+    "send": "Sádde"
+  },
+  "message": {
+    "user": "Don",
+    "assistant": "Veahkkebargi",
+    "originalBadge": "Álgovuolggálaš",
+    "streamingErrorPrefix": "Meattáhus čájehettiin:"
+  }
+  ,
+  "menu": {
+    "resetPersistence": "Gaskalusat čájehisvuođa",
+    "salke": "Sálke"
+  }
+}

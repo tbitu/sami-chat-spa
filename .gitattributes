@@ -1,0 +1,18 @@
+# Enforce LF line endings for text files
+* text=auto eol=lf
+
+# Mark common binary filetypes as binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.mp4 binary
+*.mp3 binary
+*.zip binary
+*.tar.gz binary
+
+# If you use Git LFS, uncomment and adjust the lines below to track large assets
+# (install Git LFS: https://git-lfs.github.com/)
+#*.png filter=lfs diff=lfs merge=lfs -text
+#*.jpg filter=lfs diff=lfs merge=lfs -text
+#models/** filter=lfs diff=lfs merge=lfs -text

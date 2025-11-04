@@ -1,0 +1,43 @@
+{
+  "apiConfig": {
+    "title": "API-konfigurasjon",
+    "description": "Konfigurer hvilke eksterne API-er du vil bruke. Du kan oppgi ett eller begge.",
+    "translationServiceLabel": "Oversettelsestjeneste",
+    "translationServiceOptions": {
+      "local-llm": "Local LLM (localhost:8000)",
+      "tartunlp-public": "TartuNLP Public API"
+    },
+    "geminiKeyLabel": "Google Gemini API-nøkkel (valgfritt)",
+    "openaiKeyLabel": "OpenAI API-nøkkel (valgfritt)",
+    "fetchModelsLoading": "Laster modeller...",
+    "submit": "Start",
+    "errors": {
+      "atLeastOne": "Vennligst oppgi minst én API-nøkkel",
+      "geminiFormat": "Gemini API-nøkkelen må starte med 'AIza'",
+      "openaiFormat": "OpenAI API-nøkkelen må starte med 'sk-'"
+    },
+    "noteTitle": "Merk:",
+    "noteBody": "API-nøkler kan eksponere fakturering eller personlig data. Hold dem hemmelige og bruk kun betrodde tjenester."
+  },
+  "chatInterface": {
+    "title": "Sami Chat",
+    "empty": {
+      "welcome": "Velkommen!",
+      "hint": "Still et spørsmål for å starte en samtale."
+    },
+    "streaming": "Mottar svar...",
+    "inputPlaceholder": "Skriv meldingen din her...",
+    "send": "Send"
+  },
+  "message": {
+    "user": "Du",
+    "assistant": "Assistent",
+    "originalBadge": "Original",
+    "streamingErrorPrefix": "Feil under streaming:"
+  }
+  ,
+  "menu": {
+    "resetPersistence": "Tilbakestill lagring",
+    "salke": "Sálke"
+  }
+}

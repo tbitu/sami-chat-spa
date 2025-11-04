@@ -1,0 +1,82 @@
+#root {
+  width: 100%;
+  height: calc(var(--vh, 1vh) * 100);
+}
+
+/* Hamburger menu styles */
+.hc-menu {
+  display: inline-block;
+  position: relative;
+  margin-left: 12px;
+}
+
+.hc-menu-button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  color: inherit;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.hc-menu-button:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.hc-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: 1.5rem;
+  background-color: #1e1e1e; /* match modal dark bg */
+  color: rgba(255,255,255,0.9);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+  padding: 0.25rem;
+  z-index: 1200;
+  min-width: 160px;
+}
+
+.hc-menu-dropdown button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  color: inherit;
+  border-radius: 4px;
+}
+
+.hc-menu-dropdown button:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+@media (prefers-color-scheme: light) {
+  .hc-menu-dropdown {
+    background-color: white;
+    color: #1a1a1a;
+    border: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  }
+  .hc-menu-button:hover, .hc-menu-dropdown button:hover {
+    background: rgba(0,0,0,0.04);
+  }
+}
+
+@media (max-width: 480px) {
+  .hc-menu-dropdown {
+    right: auto;
+    left: 0;
+    top: 2.25rem;
+    min-width: 140px;
+    width: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+
+  .hc-menu {
+    margin-left: 6px;
+  }
+}

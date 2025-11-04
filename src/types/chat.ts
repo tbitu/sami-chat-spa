@@ -1,0 +1,46 @@
+// AI Provider types and interfaces
+
+export type AIProvider = 'gemini' | 'chatgpt';
+
+export type TranslationService = 'tartunlp-public' | 'local-llm';
+
+export interface Message {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+export interface ChatSession {
+  id: string;
+  provider: AIProvider;
+  messages: Message[];
+  systemInstruction: string;
+  createdAt: Date;
+}
+
+export interface AIProviderConfig {
+  apiKey: string;
+}
+
+export interface TranslationConfig {
+  service: TranslationService;
+  apiUrl?: string; // Optional custom URL
+}
+
+export interface StreamCallback {
+  onChunk: (chunk: string) => void;
+  onComplete: () => void;
+  onError: (error: Error) => void;
+}
+
+export interface AIService {
+  sendMessage(
+    messages: Message[],
+    systemInstruction: string
+  ): Promise<string>;
+  
+  streamMessage?(
+    messages: Message[],
+    systemInstruction: string,
+    callback: StreamCallback
+  ): Promise<void>;
+}

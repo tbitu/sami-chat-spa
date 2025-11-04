@@ -1,0 +1,188 @@
+.api-config-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 1000;
+}
+
+.api-config-modal {
+  background-color: #1e1e1e;
+  border-radius: 12px;
+  padding: 2rem;
+  max-width: 600px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+
+.api-config-modal h2 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+.api-config-modal .description {
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 2rem;
+}
+
+.input-group {
+  margin-bottom: 1.5rem;
+}
+
+.input-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.api-input {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background-color: rgba(0, 0, 0, 0.3);
+  color: inherit;
+  font-size: 1rem;
+  font-family: 'Courier New', monospace;
+}
+
+.api-input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.input-group small {
+  display: block;
+  margin-top: 0.25rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.875rem;
+}
+
+.input-group small a {
+  color: #5ea3d9;
+  text-decoration: none;
+}
+
+.input-group small a:hover {
+  text-decoration: underline;
+}
+
+.checkbox-group {
+  margin-bottom: 1.5rem;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.submit-button {
+  width: 100%;
+  padding: 1rem;
+  border-radius: 8px;
+  border: none;
+  background-color: #2d5a8a;
+  color: white;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.submit-button:hover:not(:disabled) {
+  background-color: #3a6ca0;
+}
+
+.submit-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.info-box {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border-radius: 6px;
+  background-color: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.info-box strong {
+  color: #ffc107;
+}
+
+@media (prefers-color-scheme: light) {
+  .api-config-modal {
+    background-color: white;
+    color: #1a1a1a;
+  }
+
+  .api-config-modal .description {
+    color: rgba(0, 0, 0, 0.6);
+  }
+
+  .api-input {
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    background-color: #f5f5f5;
+  }
+
+  .input-group small {
+    color: rgba(0, 0, 0, 0.6);
+  }
+
+  .info-box {
+    background-color: rgba(255, 193, 7, 0.1);
+    border: 1px solid rgba(255, 193, 7, 0.4);
+    color: #1a1a1a;
+  }
+
+  .info-box strong {
+    color: #f57c00;
+  }
+}
+
+/* Phone specific modal adjustments */
+@media (max-width: 480px) {
+  .api-config-modal {
+    max-width: 100%;
+    height: calc(var(--vh, 1vh) * 100);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    overflow-y: auto;
+  }
+
+  .api-config-modal h2 {
+    font-size: 1.125rem;
+  }
+
+  .api-config-modal .description {
+    margin-bottom: 1rem;
+  }
+
+  .input-group {
+    margin-bottom: 1rem;
+  }
+
+  .submit-button {
+    padding: 0.875rem;
+  }
+}
