@@ -67,3 +67,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Local archive of notes, scripts and tests (should not be committed)
+archive/
