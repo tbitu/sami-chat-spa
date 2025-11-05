@@ -3,8 +3,13 @@ import { AIProvider, AIService, Message, ChatSession } from '../types/chat';
 import { sanitizePlaceholders } from '../utils/markdown';
 import { GeminiService } from './gemini';
 import { ChatGPTService } from './chatgpt';
-import { translateWithMarkdown, translatePreserveFormattingChunk } from './translation';
-import { ChunkAggregator } from '../utils/chunk-aggregator';
+import { translateWithMarkdown } from './translation';
+import {
+  detectLanguage,
+  isSami,
+  validateFinnishOutput,
+  validateSamiOutput,
+} from '../utils/language-detection';
 
 const SYSTEM_INSTRUCTION = `You are a helpful AI assistant. The user is communicating with you in Northern Sami (Davvisámegiella), however you receive their messages in Finnish. IMPORTANT: Under no circumstances should you output any language other than Finnish (suomi). All assistant replies MUST be in Finnish.
 
@@ -17,6 +22,12 @@ Therefore, when composing answers:
 - Preserve formatting and markdown structure (code blocks, tables, links) so that translations do not corrupt content.
 
 Remember: the end user reads the conversation in Northern Sami after translation. Your internal answer language must be Finnish for the translation step to deliver a correct Sami reply.`;
+
+// Retry configuration
+const MAX_LLM_LANGUAGE_RETRIES = 2; // Max retries for wrong language from LLM (Stage 2)
+const MAX_TRANSLATION_RETRIES = 1;  // Max retries for translation quality issues (Stage 3)
+const FINNISH_CONFIDENCE_THRESHOLD = 0.7; // Minimum confidence to accept Finnish output
+const SAMI_BYPASS_THRESHOLD = 0.6; // Minimum confidence to detect non-Sami input
 
 const SESSION_STORAGE_KEY = 'sami_chat_session';
 
@@ -133,12 +144,28 @@ export class ChatOrchestrator {
       throw new Error('No active session. Create a session first.');
     }
 
-  // Step 1: Translate user message from Sami to Finnish
-    console.log('Translating user message from Sami to Finnish...');
-    const userMessageInFinnish = await translateWithMarkdown(
-      userMessageInSami,
-      'sme-fin'
-    );
+    // STAGE 1: Pre-Translation - Detect if input is actually Sami
+    console.log('[Orchestrator] Stage 1: Detecting input language...');
+    const inputLangDetection = detectLanguage(userMessageInSami);
+    console.log(`[Orchestrator] Detected: ${inputLangDetection.language} (confidence: ${inputLangDetection.confidence.toFixed(2)})`);
+
+    let userMessageInFinnish: string;
+    
+    if (!isSami(userMessageInSami, SAMI_BYPASS_THRESHOLD)) {
+      // Input is NOT Sami - bypass translation and send directly
+      console.log(`[Orchestrator] Input is ${inputLangDetection.language}, bypassing sme→fin translation`);
+      userMessageInFinnish = userMessageInSami;
+      
+      // Update system instruction to handle non-Sami input
+      // Note: Still require Finnish output for translation back to Sami UI
+    } else {
+      // Normal flow: Translate user message from Sami to Finnish
+      console.log('[Orchestrator] Translating user message from Sami to Finnish...');
+      userMessageInFinnish = await translateWithMarkdown(
+        userMessageInSami,
+        'sme-fin'
+      );
+    }
 
     // Step 2: Add user message to history
     const userMessage: Message = {
@@ -147,13 +174,52 @@ export class ChatOrchestrator {
     };
     this.currentSession.messages.push(userMessage);
 
-    // Step 3: Send to AI provider
-    console.log(`Sending message to ${this.currentSession.provider}...`);
+    // Step 3: Send to AI provider with retry logic for language validation
+    console.log(`[Orchestrator] Sending message to ${this.currentSession.provider}...`);
     const service = this.getService(this.currentSession.provider);
-    const assistantResponseInFinnish = await service.sendMessage(
+    let assistantResponseInFinnish = await service.sendMessage(
       this.currentSession.messages,
       this.currentSession.systemInstruction
     );
+
+    // STAGE 2: Post-LLM - Validate LLM responded in Finnish
+    console.log('[Orchestrator] Stage 2: Validating LLM response language...');
+    let llmRetryCount = 0;
+    let finnishValidation = validateFinnishOutput(assistantResponseInFinnish, FINNISH_CONFIDENCE_THRESHOLD);
+    
+    while (!finnishValidation.isValid && llmRetryCount < MAX_LLM_LANGUAGE_RETRIES) {
+      llmRetryCount++;
+      console.warn(`[Orchestrator] LLM validation failed (attempt ${llmRetryCount}/${MAX_LLM_LANGUAGE_RETRIES}):`, finnishValidation.errors);
+      console.warn(`[Orchestrator] Detected language: ${finnishValidation.language}, confidence: ${finnishValidation.confidence.toFixed(2)}`);
+      
+      // Build retry instruction emphasizing Finnish requirement
+      const retryInstruction = `${this.currentSession.systemInstruction}
+
+⚠️ RETRY NOTICE: Your previous response was detected as ${finnishValidation.language} with ${(finnishValidation.confidence * 100).toFixed(0)}% confidence. This is INCORRECT.
+
+You MUST respond ONLY in Finnish (suomi). The translation system requires Finnish output.
+Please reformulate your answer in clear, simple Finnish.`;
+
+      // Remove the failed response from history
+      this.currentSession.messages.pop();
+      
+      // Retry with enhanced instruction
+      assistantResponseInFinnish = await service.sendMessage(
+        this.currentSession.messages,
+        retryInstruction
+      );
+      
+      // Re-validate
+      finnishValidation = validateFinnishOutput(assistantResponseInFinnish, FINNISH_CONFIDENCE_THRESHOLD);
+    }
+    
+    if (!finnishValidation.isValid) {
+      console.error('[Orchestrator] LLM still not responding in Finnish after retries. Proceeding with translation anyway.');
+      // Log warnings but continue (fallback behavior)
+      for (const warning of finnishValidation.warnings) {
+        console.warn(`[Orchestrator] ${warning}`);
+      }
+    }
 
     // Step 4: Add assistant response to history
     const assistantMessage: Message = {
@@ -165,146 +231,80 @@ export class ChatOrchestrator {
     // Save session to persist the conversation
     saveSessionToStorage(this.currentSession);
 
-  // Step 5: Translate response from Finnish to Sami
-    console.log('Translating response from Finnish to Sami...');
-    const assistantResponseInSami = await translateWithMarkdown(
+    // Step 5: Translate response from Finnish to Sami
+    console.log('[Orchestrator] Translating response from Finnish to Sami...');
+    let assistantResponseInSami = await translateWithMarkdown(
       assistantResponseInFinnish,
       'fin-sme'
     );
 
-    return assistantResponseInSami;
-  }
-
-  async sendMessageStreaming(
-    userMessageInSami: string,
-    onProgress: (translatedChunk: string) => void
-  ): Promise<string> {
-    console.log('[Orchestrator] sendMessageStreaming called');
+    // STAGE 3: Post-Translation - Validate Sami output quality
+    console.log('[Orchestrator] Stage 3: Validating Sami output...');
+    let translationRetryCount = 0;
+    let samiValidation = validateSamiOutput(assistantResponseInSami);
     
-    if (!this.currentSession) {
-      throw new Error('No active session. Create a session first.');
-    }
-
-  // Step 1: Translate user message from Sami to Finnish
-    console.log('Translating user message from Sami to Finnish...');
-    const userMessageInFinnish = await translateWithMarkdown(
-      userMessageInSami,
-      'sme-fin'
-    );
-    console.log('[Orchestrator] User message translated (' + userMessageInFinnish.length + ' chars):', userMessageInFinnish);
-
-    // Step 2: Add user message to history
-    const userMessage: Message = {
-      role: 'user',
-      content: userMessageInFinnish,
-    };
-    this.currentSession.messages.push(userMessage);
-
-    // Step 3: Stream from AI provider
-    console.log(`[Orchestrator] Streaming message from ${this.currentSession.provider}...`);
-    const service = this.getService(this.currentSession.provider);
-    
-    if (!service.streamMessage) {
-      console.log('[Orchestrator] Streaming not supported, falling back to non-streaming');
-      // Fallback to non-streaming if not supported
-      return this.sendMessage(userMessageInSami);
-    }
-
-    console.log('[Orchestrator] Stream method exists, creating aggregator...');
-
-    console.log('[Orchestrator] Stream method exists, creating aggregator...');
-    
-  let fullResponseInFinnish = '';
-    let fullResponseInSami = '';
-
-    // Create chunk aggregator that translates at natural breaks
-    // Uses queue-based sequential processing to avoid duplicate/overlapping translations
-    // minChunkSize: 200 chars - approximately 2-3 sentences, reduces API calls significantly
-    // Processes one translation at a time to ensure ordering and prevent race conditions
-    const aggregator = new ChunkAggregator(
-      async (textToTranslate: string) => {
-        console.log('[Orchestrator] Translation callback - translating chunk (preserve formatting):');
-        console.log('[Orchestrator] Full text to translate (' + textToTranslate.length + ' chars):', textToTranslate);
-        // Use the lower-level preserve-formatting translator which only sends
-        // inner text between markdown formattings to the translation API.
-        const translatedChunk = await translatePreserveFormattingChunk(
-          textToTranslate,
-          'fin-sme'
-        );
-        console.log('[Orchestrator] Translation completed (' + translatedChunk.length + ' chars):', translatedChunk);
-        fullResponseInSami += translatedChunk;
-        onProgress(translatedChunk);
-      },
-      0,     // Not used with queue-based processing
-      200,   // Need at least 200 characters (2-3 sentences) before translating - reduced API calls
-      1      // Always 1 for sequential processing
-    );
-
-    console.log('[Orchestrator] Aggregator created, setting up promise...');
-
-    return new Promise((resolve, reject) => {
-      console.log('[Orchestrator] Promise created, setting up timeout...');
-      let streamingStarted = false;
+    while (!samiValidation.isValid && translationRetryCount < MAX_TRANSLATION_RETRIES) {
+      translationRetryCount++;
+      console.warn(`[Orchestrator] Sami validation failed (attempt ${translationRetryCount}/${MAX_TRANSLATION_RETRIES}):`, samiValidation.errors);
       
-      // Safety timeout: If no chunks received within 30 seconds, error out
-      const timeoutId = setTimeout(() => {
-        if (!streamingStarted) {
-          console.error('[Orchestrator] Streaming timeout - no data received');
-          reject(new Error('Streaming timeout - no response from server'));
-        }
-      }, 30000);
+      // Request LLM to rephrase in simpler Finnish
+      const rephraseInstruction = `The following Finnish response caused translation errors when converted to Northern Sami:
+
+--- ORIGINAL FINNISH RESPONSE ---
+${assistantResponseInFinnish}
+--- END ORIGINAL ---
+
+Translation errors detected:
+${samiValidation.errors.join('\n')}
+
+Please rewrite this ENTIRE response in simpler, clearer Finnish that will translate better to Northern Sami.
+Requirements:
+- Keep the same information and structure
+- Use shorter, simpler sentences
+- Avoid complex compound words
+- Use common, everyday vocabulary
+- Maintain the same level of detail and helpfulness
+
+Provide the complete rewritten response in Finnish:`;
+
+      const rephraseMessage: Message = {
+        role: 'user',
+        content: rephraseInstruction,
+      };
       
-      console.log('[Orchestrator] Calling service.streamMessage...');
-      
-      service.streamMessage!(
-        this.currentSession!.messages,
-        this.currentSession!.systemInstruction,
-        {
-          onChunk: (chunk: string) => {
-            streamingStarted = true;
-            clearTimeout(timeoutId);
-            console.log(`[Orchestrator] Received chunk: ${chunk.length} chars`);
-            fullResponseInFinnish += chunk;
-            // Don't await - let it run in parallel
-            aggregator.addChunk(chunk).catch(error => {
-              console.error('[Orchestrator] Error adding chunk:', error);
-            });
-          },
-          onComplete: async () => {
-            clearTimeout(timeoutId);
-            console.log('[Orchestrator] AI streaming complete, flushing remaining translations...');
-            console.log(`[Orchestrator] Full Finnish response: ${fullResponseInFinnish.length} chars`);
-            try {
-              // Flush and wait for ALL translations to complete
-              await aggregator.flush();
-              
-              console.log('[Orchestrator] Flush complete, full Sami response:', fullResponseInSami.length, 'chars');
-              
-              // Add assistant response to history
-              const assistantMessage: Message = {
-                role: 'assistant',
-                content: fullResponseInFinnish,
-              };
-              this.currentSession!.messages.push(assistantMessage);
-              
-              // Save session to persist the conversation
-              saveSessionToStorage(this.currentSession!);
-              
-              console.log('[Orchestrator] All translations complete, resolving promise');
-              resolve(fullResponseInSami);
-            } catch (error) {
-              console.error('[Orchestrator] Error during flush:', error);
-              reject(error);
-            }
-          },
-          onError: (error: Error) => {
-            clearTimeout(timeoutId);
-            console.error('[Orchestrator] Streaming error:', error);
-            reject(error);
-          },
-        }
+      // Get rephrased response (don't add rephrase message to permanent history)
+      const rephrasedFinnish = await service.sendMessage(
+        [...this.currentSession.messages, rephraseMessage],
+        this.currentSession.systemInstruction
       );
-    });
+      
+      console.log('[Orchestrator] Received rephrased response:', rephrasedFinnish.substring(0, 200) + '...');
+      
+      // Update the original Finnish response for re-translation
+      assistantResponseInFinnish = rephrasedFinnish;
+      
+      // Also update the assistant message in history with rephrased version
+      this.currentSession.messages[this.currentSession.messages.length - 1].content = rephrasedFinnish;
+      saveSessionToStorage(this.currentSession);
+      
+      // Re-translate
+      assistantResponseInSami = await translateWithMarkdown(rephrasedFinnish, 'fin-sme');
+      
+      // Re-validate
+      samiValidation = validateSamiOutput(assistantResponseInSami);
+    }
+    
+    if (!samiValidation.isValid) {
+      console.error('[Orchestrator] Sami output still invalid after retries:', samiValidation.errors);
+      throw new Error(`Translation quality issue: ${samiValidation.errors.join(', ')}`);
+    }
+    
+    // Log warnings if any
+    for (const warning of samiValidation.warnings) {
+      console.warn(`[Orchestrator] ${warning}`);
+    }
+
+    return assistantResponseInSami;
   }
 
   getMessageHistory(): Message[] {

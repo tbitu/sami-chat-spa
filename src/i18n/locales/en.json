@@ -34,8 +34,15 @@
     "assistant": "Assistant",
     "originalBadge": "Original",
     "streamingErrorPrefix": "Error while streaming:"
-  }
-  ,
+  },
+  "errors": {
+    "translationQuality": "Translation quality issue detected. Please try rephrasing your question.",
+    "languageDetection": "Could not detect language. Please try writing in Northern Sami.",
+    "llmLanguage": "AI responded in wrong language. Retrying...",
+    "invalidCharacters": "Translation contains invalid characters. Retrying...",
+    "translationArtifacts": "Translation error detected. Please try rephrasing.",
+    "retryFailed": "Retry failed. Please try rephrasing your question differently."
+  },
   "menu": {
     "resetPersistence": "Reset persistence",
     "salke": "Sálke"

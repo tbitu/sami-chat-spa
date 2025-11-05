@@ -1,5 +1,5 @@
 // ChatGPT (OpenAI) API Service
-import { AIService, Message, StreamCallback } from '../types/chat';
+import { AIService, Message } from '../types/chat';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models';
@@ -189,102 +189,5 @@ export class ChatGPTService implements AIService {
     }
 
     return data.choices[0].message.content;
-  }
-
-  async streamMessage(
-    messages: Message[],
-    systemInstruction: string,
-    callback: StreamCallback
-  ): Promise<void> {
-    console.log('[ChatGPT] streamMessage called');
-    const preparedMessages = this.prepareMessages(messages, systemInstruction);
-    console.log('[ChatGPT] Messages prepared, count:', preparedMessages.length);
-
-    const request = {
-      model: this.model,
-      messages: preparedMessages,
-      temperature: 0.7,
-      max_tokens: 4096,
-      stream: true,
-    };
-
-    console.log('[ChatGPT] Making request to:', OPENAI_API_URL);
-
-    try {
-      const response = await fetch(OPENAI_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify(request),
-      });
-
-      console.log('[ChatGPT] Response received, status:', response.status, response.statusText);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[ChatGPT] API error:', { status: response.status, statusText: response.statusText, body: errorText });
-        callback.onError(new Error(`OpenAI API error: ${response.statusText}`));
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        console.error('[ChatGPT] Response body is not readable');
-        callback.onError(new Error('Response body is not readable'));
-        return;
-      }
-
-      console.log('[ChatGPT] Starting to read stream...');
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      try {
-        let streamFinished = false;
-        while (!streamFinished) {
-          const { done, value } = await reader.read();
-
-          if (done) {
-            console.log('[ChatGPT] Stream complete');
-            streamFinished = true;
-            break;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const jsonStr = line.slice(6).trim();
-              if (jsonStr === '[DONE]') {
-                continue;
-              }
-              
-              try {
-                const data = JSON.parse(jsonStr);
-                const chunk = data.choices?.[0]?.delta?.content;
-                if (chunk) {
-                  console.log('[ChatGPT] Incremental chunk:', chunk.length, 'chars, content:', JSON.stringify(chunk.substring(0, 50)));
-                  callback.onChunk(chunk);
-                }
-              } catch (parseError) {
-                console.warn('[ChatGPT] Failed to parse SSE chunk:', parseError);
-              }
-            }
-          }
-        }
-        
-        console.log('[ChatGPT] Calling onComplete');
-        callback.onComplete();
-      } catch (error) {
-        console.error('[ChatGPT] Streaming read error:', error);
-        callback.onError(error instanceof Error ? error : new Error(String(error)));
-      }
-    } catch (error) {
-      console.error('[ChatGPT] Streaming error:', error);
-      callback.onError(error instanceof Error ? error : new Error(String(error)));
-    }
   }
 }

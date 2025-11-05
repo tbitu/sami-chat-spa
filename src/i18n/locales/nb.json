@@ -34,8 +34,15 @@
     "assistant": "Assistent",
     "originalBadge": "Original",
     "streamingErrorPrefix": "Feil under streaming:"
-  }
-  ,
+  },
+  "errors": {
+    "translationQuality": "Kvalitetsproblem med oversettelse oppdaget. Vennligst prøv å omformulere spørsmålet.",
+    "languageDetection": "Kunne ikke gjenkjenne språk. Vennligst prøv å skrive på nordsamisk.",
+    "llmLanguage": "AI svarte på feil språk. Prøver på nytt...",
+    "invalidCharacters": "Oversettelsen inneholder ugyldige tegn. Prøver på nytt...",
+    "translationArtifacts": "Oversettelsefeil oppdaget. Vennligst prøv å omformulere.",
+    "retryFailed": "Nytt forsøk mislyktes. Vennligst prøv å omformulere spørsmålet på en annen måte."
+  },
   "menu": {
     "resetPersistence": "Tilbakestill lagring",
     "salke": "Sálke"

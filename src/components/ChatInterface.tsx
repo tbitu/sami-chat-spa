@@ -9,11 +9,10 @@ interface DisplayMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-  isStreaming?: boolean;
 }
 
 interface ChatInterfaceProps {
-  onSendMessage: (message: string, onProgress?: (chunk: string) => void) => Promise<string>;
+  onSendMessage: (message: string) => Promise<string>;
   isLoading: boolean;
   onModelChange?: (model?: string) => void;
   onClearSession?: () => void;
@@ -133,50 +132,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   // keep focus in the input after sending
   inputRef.current?.focus();
 
-    // Create placeholder for streaming assistant message
-    const assistantId = crypto.randomUUID();
-    console.log('[ChatInterface] Created placeholder message with ID:', assistantId);
-    
-    const assistantMessage: DisplayMessage = {
-      id: assistantId,
-      role: 'assistant',
-      content: '',
-      timestamp: new Date(),
-      isStreaming: true,
-    };
-    setMessages(prev => [...prev, assistantMessage]);
-
-    console.log('[ChatInterface] Calling onSendMessage with callback');
+    console.log('[ChatInterface] Calling onSendMessage');
     
     try {
-      await onSendMessage(messageToSend, (chunk: string) => {
-        const sanitized = sanitizePlaceholders(chunk);
-        console.log('[ChatInterface] Progress callback - received chunk:', sanitized.length, 'chars');
-        // Update the streaming message with each chunk (sanitized)
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === assistantId 
-              ? { ...msg, content: msg.content + sanitized }
-              : msg
-          )
-        );
-      });
+      const response = await onSendMessage(messageToSend);
       
-      console.log('[ChatInterface] onSendMessage completed, marking as not streaming');
+      console.log('[ChatInterface] onSendMessage completed');
       
-      // Mark streaming as complete
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === assistantId 
-            ? { ...msg, isStreaming: false }
-            : msg
-        )
-      );
+      // Add assistant response
+      const assistantMessage: DisplayMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: sanitizePlaceholders(response),
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
       console.error('[ChatInterface] Error sending message:', error);
-      
-      // Remove the placeholder and add error message
-      setMessages(prev => prev.filter(msg => msg.id !== assistantId));
       
       const errorMessage: DisplayMessage = {
         id: crypto.randomUUID(),
@@ -250,15 +222,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         )}
         {messages.map((msg) => (
-          <div key={msg.id}>
-            <Message role={msg.role} content={sanitizePlaceholders(msg.content)} />
-            {msg.isStreaming && (
-              <div className="streaming-indicator">
-                <div className="spinner"></div>
-                <span>{t('chatInterface.streaming')}</span>
-              </div>
-            )}
-          </div>
+          <Message key={msg.id} role={msg.role} content={sanitizePlaceholders(msg.content)} />
         ))}
         {isLoading && (
           <div className="loading-indicator">

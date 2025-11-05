@@ -34,8 +34,15 @@
     "assistant": "Veahkkebargi",
     "originalBadge": "Álgovuolggálaš",
     "streamingErrorPrefix": "Meattáhus čájehettiin:"
-  }
-  ,
+  },
+  "errors": {
+    "translationQuality": "Jorgalusas ledje váttásat. Geahččal ođasit, dahje orro sáhka earáháhkan.",
+    "languageDetection": "Ii dovddán giela. Geahččal čállit davvisámegillii.",
+    "llmLanguage": "AI vástideaddji frámmášii boastto gielas. Geahččal ođasit.",
+    "invalidCharacters": "Jorgalus sisttisdoallá eahpešievvan mearkkagiid. Geahččal ođasit.",
+    "translationArtifacts": "Jorgalusdihtor ráhkadii boasttuid. Geahččal ođasit dahje čále earáládje.",
+    "retryFailed": "Ollešattaneami maiddái earret oktii, muhto eai lihkostuvvon. Geahččal earáládje čállojuvvon sáni."
+  },
   "menu": {
     "resetPersistence": "Gaskalusat čájehisvuođa",
     "salke": "Sálke"

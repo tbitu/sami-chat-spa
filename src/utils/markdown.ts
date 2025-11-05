@@ -513,7 +513,11 @@ export function reconstructSegmentsFromUnits(segments: MarkdownSegment[], transl
           const translated = translatedUnits.get(key) || t.text;
           switch (t.kind) {
             case 'text':
-              return translated;
+              // Preserve leading/trailing whitespace from original token
+              const originalLeadingSpace = t.text.match(/^\s+/)?.[0] || '';
+              const originalTrailingSpace = t.text.match(/\s+$/)?.[0] || '';
+              const trimmedTranslated = translated.trim();
+              return originalLeadingSpace + trimmedTranslated + originalTrailingSpace;
             case 'bold':
               return `${t.wrapperStart || '**'}${translated}${t.wrapperEnd || '**'}`;
             case 'italic':
@@ -538,7 +542,12 @@ export function reconstructSegmentsFromUnits(segments: MarkdownSegment[], transl
       const translated = translatedUnits.get(key) || t.text;
       switch (t.kind) {
         case 'text':
-          return translated;
+          // Preserve leading/trailing whitespace from original token
+          // Translation API may trim spaces, but we need them for proper formatting
+          const originalLeadingSpace = t.text.match(/^\s+/)?.[0] || '';
+          const originalTrailingSpace = t.text.match(/\s+$/)?.[0] || '';
+          const trimmedTranslated = translated.trim();
+          return originalLeadingSpace + trimmedTranslated + originalTrailingSpace;
         case 'bold':
           return `${t.wrapperStart || '**'}${translated}${t.wrapperEnd || '**'}`;
         case 'italic':

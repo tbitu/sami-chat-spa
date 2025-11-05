@@ -58,10 +58,7 @@ function App() {
     }
   }, []);
 
-  const handleSendMessage = async (
-    message: string,
-    onProgress?: (chunk: string) => void
-  ): Promise<string> => {
+  const handleSendMessage = async (message: string): Promise<string> => {
     console.log('[App] handleSendMessage called with message:', message.substring(0, 50));
     
     if (!orchestrator) {
@@ -70,25 +67,9 @@ function App() {
 
     setIsLoading(true);
     try {
-      if (onProgress) {
-        console.log('[App] Using streaming version');
-        try {
-          // Try streaming version first
-          const response = await orchestrator.sendMessageStreaming(message, onProgress);
-          console.log('[App] Streaming succeeded, response length:', response.length);
-          return response;
-        } catch (streamError) {
-          console.warn('[App] Streaming failed, falling back to non-streaming:', streamError);
-          // Fallback to non-streaming on error
-          const response = await orchestrator.sendMessage(message);
-          return response;
-        }
-      } else {
-        console.log('[App] Using non-streaming version');
-        // Direct non-streaming
-        const response = await orchestrator.sendMessage(message);
-        return response;
-      }
+      console.log('[App] Using non-streaming version');
+      const response = await orchestrator.sendMessage(message);
+      return response;
     } finally {
       console.log('[App] Setting isLoading to false');
       setIsLoading(false);

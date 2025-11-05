@@ -7,6 +7,7 @@ import {
   reconstructSegmentsFromUnits,
   ExportedTranslationUnit as TranslationUnit,
   hasMarkdown,
+  sanitizePlaceholders,
 } from '../utils/markdown.ts';
 import type { TranslationConfig } from '../types/chat.ts';
 
@@ -186,6 +187,35 @@ async function translateText(
 }
 
 /**
+ * Detect if a translation appears corrupted based on common patterns.
+ * Returns true if the translation should be retried.
+ */
+function isCorruptedTranslation(translated: string, original: string, direction: TranslationDirection): boolean {
+  if (direction === 'fin-sme') {
+    // Pattern: Short headers ending with ":" that get corrupted due to context bleeding
+    // Corruption signs: starts with closing brackets/parens followed by lowercase text
+    // Example: "Ohje:" -> ") help." instead of proper Sami translation
+    if (original.trim().endsWith(':') && original.length < 30) {
+      const trimmedTranslation = translated.trim();
+      
+      // Corrupted if: starts with ")", "]", "}" followed by space and lowercase
+      // (Proper Sami headers should start with capital letter)
+      if (/^[)\]}]+\s+[a-z]/.test(trimmedTranslation)) {
+        return true;
+      }
+      
+      // Also check for mixed language artifacts (English words appearing in Sami text)
+      // Common corruption: partial English words like "help", "step", "note"
+      if (/\b(help|step|note|tip|info)\b/i.test(trimmedTranslation)) {
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}
+
+/**
  * Translate text with markdown preservation
  */
 export async function translateWithMarkdown(
@@ -221,20 +251,22 @@ export async function translateWithMarkdown(
   const translatedUnits = new Map<string, string>();
 
   for (const [segmentIndex, segUnits] of unitsBySegment.entries()) {
-    // Batch unit texts joined by pipe (|) separator which the translation API preserves.
-    // We require strict 1:1 mapping on pipe-splits (no fallbacks).
+    // Batch unit texts joined by pipe separator. This is the most reliably preserved separator
+    // by the translation LLM, though it occasionally causes context bleeding between units.
+    // Alternative separators like \n---\n get interpreted as content by the LLM.
     const SEP = '|';
     const batchText = segUnits.map(u => u.text).join(SEP);
     try {
   // Only log Finnish texts per user's preference:
-  // - When direction === 'fin-sme', the batchText here is Finnish (LLM reply).
-  //   Log it as the LLM reply (Finnish) but do not log translated result.
+  // - When direction === 'fin-sme', the batchText here is Finnish (segment from LLM reply).
+  //   Log it before translation but do not log translated result.
   // - When direction === 'sme-fin', the translatedBatch will be Finnish
   //   (what will be sent to the LLM); log that after translation.
       if (direction === 'fin-sme') {
         try {
-          console.log('[Translation] LLM reply (Finnish):', {
-            items: segUnits.length,
+          console.log('[Translation] Finnish segment to translate:', {
+            segmentIndex,
+            units: segUnits.length,
             length: batchText.length,
             text: batchText,
           });
@@ -252,13 +284,18 @@ export async function translateWithMarkdown(
             length: translatedBatch.length,
             text: translatedBatch,
           });
-        } catch (err) {}
+        } catch (err) {
+          // Ignore logging errors
+        }
       }
 
   const parts = translatedBatch.split(SEP);
   if (parts.length !== segUnits.length) {
         // Log warning but don't throw - translation API may have merged/modified separators
         console.warn(`[Translation] Split mismatch: expected ${segUnits.length} parts but got ${parts.length}. Using fallback strategy.`);
+        console.warn(`[Translation] Original units:`, segUnits.map(u => u.text));
+        console.warn(`[Translation] Translated batch:`, translatedBatch);
+        console.warn(`[Translation] Split parts:`, parts);
         
         // Fallback: if we got fewer parts, distribute them or use the whole batch for first unit
         if (parts.length === 1) {
@@ -266,12 +303,141 @@ export async function translateWithMarkdown(
           const first = segUnits[0] as any;
           const key = first.lineIndex !== undefined ? `${segmentIndex}:${first.lineIndex}:${first.tokenIndex}` : `${segmentIndex}:${first.tokenIndex}`;
           translatedUnits.set(key, translatedBatch);
-        } else {
-          // Distribute available parts, use originals for missing ones
+        } else if (parts.length > segUnits.length) {
+          // Translation API split more than expected - need to merge some parts
+          // Strategy: Use alternating pattern detection - headers (short, ends with :) alternate with content
+          console.warn(`[Translation] Got more parts than expected, using pattern-based merging`);
+          
+          let partIndex = 0;
           for (let i = 0; i < segUnits.length; i++) {
             const u = segUnits[i] as any;
             const key = u.lineIndex !== undefined ? `${segmentIndex}:${u.lineIndex}:${u.tokenIndex}` : `${segmentIndex}:${u.tokenIndex}`;
-            translatedUnits.set(key, parts[i] || u.text);
+            
+            if (partIndex >= parts.length) {
+              console.warn(`[Translation] Ran out of parts at unit ${i}`);
+              translatedUnits.set(key, u.text);
+              continue;
+            }
+            
+            // Check if current unit is a header (short and ends with :)
+            const isHeader = u.text.trim().endsWith(':') && u.text.length < 50;
+            
+            if (isHeader) {
+              // Headers should map 1:1 to a part ending with :
+              if (parts[partIndex].trim().endsWith(':')) {
+                translatedUnits.set(key, parts[partIndex]);
+                partIndex++;
+              } else {
+                // Mismatch - use original
+                console.warn(`[Translation] Header mismatch at unit ${i}, using original`);
+                translatedUnits.set(key, u.text);
+              }
+            } else {
+              // Content unit - may need to merge multiple parts
+              // Collect parts until we hit the next header or reach expected count
+              const partsNeeded = segUnits.length - i; // remaining units
+              const partsAvailable = parts.length - partIndex; // remaining parts
+              const extraParts = partsAvailable - partsNeeded;
+              
+              // If we have extra parts and this is a content unit, merge extras here
+              const collectedParts = [parts[partIndex]];
+              partIndex++;
+              
+              // Merge extra parts into this content unit, but stop before the next header
+              let merged = 0;
+              while (merged < extraParts && partIndex < parts.length && !parts[partIndex].trim().endsWith(':')) {
+                collectedParts.push(parts[partIndex]);
+                partIndex++;
+                merged++;
+              }
+              
+              // Smart joining: if parts look like separate sentences (start with capital), use space
+              // otherwise join with nothing (they were split mid-sentence)
+              const joinedContent = collectedParts.map((part, idx) => {
+                if (idx === 0) return part;
+                // Check if this part starts a new sentence (capital letter or number after trimming)
+                const trimmed = part.trim();
+                const startsWithCapital = trimmed.length > 0 && /^[A-ZČĐŊŠŦŽ]/.test(trimmed[0]);
+                // If previous part ended with punctuation or this starts with capital, it's a new sentence
+                if (startsWithCapital || collectedParts[idx - 1].trim().endsWith('.')) {
+                  return ' ' + part;
+                }
+                return part;
+              }).join('');
+              
+              translatedUnits.set(key, joinedContent);
+            }
+          }
+        } else {
+          // Translation API merged some parts (fewer parts than expected)
+          // Strategy: Try to align headers first (they end with :), then fill in content
+          console.warn(`[Translation] Got fewer parts than expected, attempting smart alignment`);
+          
+          // Build a map of which parts are headers
+          const partIsHeader: boolean[] = parts.map(p => p.trim().endsWith(':'));
+          const unitIsHeader: boolean[] = segUnits.map(u => u.text.trim().endsWith(':'));
+          
+          let partIndex = 0;
+          for (let i = 0; i < segUnits.length; i++) {
+            const u = segUnits[i] as any;
+            const key = u.lineIndex !== undefined ? `${segmentIndex}:${u.lineIndex}:${u.tokenIndex}` : `${segmentIndex}:${u.tokenIndex}`;
+            
+            if (partIndex >= parts.length) {
+              // Ran out of parts - translate individually
+              console.warn(`[Translation] Missing translation for unit ${i}, translating individually:`, u.text);
+              try {
+                const individualTranslation = await translateText(u.text, direction);
+                console.log(`[Translation] Individual result for unit ${i}:`, {original: u.text, translated: individualTranslation});
+                // Strip any markdown formatting that the API might have added
+                const cleaned = individualTranslation.replace(/^\*\*(.+)\*\*$/, '$1').trim();
+                translatedUnits.set(key, cleaned);
+              } catch (err) {
+                console.error(`[Translation] Individual translation failed for unit ${i}, using original:`, err);
+                translatedUnits.set(key, u.text);
+              }
+              continue;
+            }
+            
+            // If both unit and part are headers, it's a 1:1 match
+            if (unitIsHeader[i] && partIsHeader[partIndex]) {
+              // Check for corruption and retry if needed
+              if (isCorruptedTranslation(parts[partIndex], u.text, direction)) {
+                console.warn(`[Translation] Corrupted header at unit ${i}, re-translating:`, u.text);
+                try {
+                  const retranslated = await translateText(u.text, direction);
+                  translatedUnits.set(key, retranslated.trim());
+                } catch (err) {
+                  translatedUnits.set(key, parts[partIndex]);
+                }
+              } else {
+                translatedUnits.set(key, parts[partIndex]);
+              }
+              partIndex++;
+            } 
+            // If unit is header but part is not, the API might have merged it with next unit
+            else if (unitIsHeader[i] && !partIsHeader[partIndex]) {
+              // Try to translate this header individually
+              console.warn(`[Translation] Header mismatch at unit ${i}, translating individually:`, u.text);
+              try {
+                const individualTranslation = await translateText(u.text, direction);
+                // Strip any markdown formatting that the API might have added
+                const cleaned = individualTranslation.replace(/^\*\*(.+)\*\*$/, '$1').trim();
+                translatedUnits.set(key, cleaned);
+              } catch (err) {
+                translatedUnits.set(key, u.text);
+              }
+              // Don't advance partIndex - this part belongs to next unit
+            }
+            // If unit is content (not header), use current part
+            else if (!unitIsHeader[i]) {
+              translatedUnits.set(key, parts[partIndex]);
+              partIndex++;
+            }
+            // Both are not headers - simple match
+            else {
+              translatedUnits.set(key, parts[partIndex]);
+              partIndex++;
+            }
           }
         }
       } else {
@@ -279,7 +445,21 @@ export async function translateWithMarkdown(
         for (let i = 0; i < segUnits.length; i++) {
           const u = segUnits[i] as any;
           const key = u.lineIndex !== undefined ? `${segmentIndex}:${u.lineIndex}:${u.tokenIndex}` : `${segmentIndex}:${u.tokenIndex}`;
-          translatedUnits.set(key, parts[i]);
+          
+          // Check if translation is corrupted and needs retry
+          if (isCorruptedTranslation(parts[i], u.text, direction)) {
+            console.warn(`[Translation] Detected corruption in unit ${i}: "${u.text}" -> "${parts[i]}"`);
+            console.warn(`[Translation] Re-translating individually to fix corruption`);
+            try {
+              const retranslated = await translateText(u.text, direction);
+              translatedUnits.set(key, retranslated.trim());
+            } catch (err) {
+              console.error(`[Translation] Re-translation failed, using corrupted version:`, err);
+              translatedUnits.set(key, parts[i]);
+            }
+          } else {
+            translatedUnits.set(key, parts[i]);
+          }
         }
       }
     } catch (error) {
@@ -297,111 +477,7 @@ export async function translateWithMarkdown(
   const translatedSegments = reconstructSegmentsFromUnits(segments, translatedUnits);
   // Final sanitize pass to remove any legacy placeholder artifacts
   const final = reconstructFromSegments(translatedSegments);
-  // Import sanitizePlaceholders lazily to avoid circular import at top-level
-  // (utils are local and safe to import here)
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { sanitizePlaceholders } = await import('../utils/markdown');
   return sanitizePlaceholders(final);
-}
-
-/**
- * Translate a chunk while preserving markdown/formatting by only sending
- * the inner text portions (what's between markdown formattings) to the
- * translation API. This is intended for streaming/batched translations
- * where we want to avoid sending markdown syntax itself to the backend.
- */
-export async function translatePreserveFormattingChunk(
-  chunk: string,
-  direction: TranslationDirection
-): Promise<string> {
-  if (!chunk || !chunk.trim()) return chunk;
-
-  // Always treat chunk as potentially containing markdown and split into segments
-  const segments = extractMarkdownSegments(chunk);
-  // Build translation units (no placeholders)
-  const units = extractTranslationUnits(segments);
-
-  if (units.length === 0) return chunk;
-
-  const unitsBySegment = new Map<number, typeof units>();
-  for (const u of units) {
-    const arr = unitsBySegment.get(u.segmentIndex) || [];
-    arr.push(u);
-    unitsBySegment.set(u.segmentIndex, arr as typeof units);
-  }
-
-  const translatedUnits = new Map<string, string>();
-
-  for (const [segmentIndex, segUnits] of unitsBySegment.entries()) {
-    // Use pipe separator like translateWithMarkdown for consistency and reliability.
-    // The translation API has been tested to preserve pipe separators well.
-    const SEP = '|';
-    const batchText = segUnits.map((u: any) => u.text).join(SEP);
-    try {
-      if (direction === 'fin-sme') {
-        try {
-          console.log('[Translation] LLM reply (Finnish):', {
-            items: segUnits.length,
-            length: batchText.length,
-            text: batchText,
-          });
-        } catch (err) {}
-      }
-
-      const translatedBatch = await translateText(batchText, direction);
-
-      if (direction === 'sme-fin') {
-        try {
-          console.log('[Translation] Finnish sent to LLM:', {
-            items: segUnits.length,
-            length: translatedBatch.length,
-            text: translatedBatch,
-          });
-        } catch (err) {}
-      }
-
-      // Split by pipe separator and verify count matches
-      const parts = translatedBatch.split(SEP);
-      if (parts.length !== segUnits.length) {
-        // Log warning but don't throw - translation API may have merged/modified separators
-        console.warn(`[Translation] Chunk split mismatch: expected ${segUnits.length} parts but got ${parts.length}. Using fallback strategy.`);
-
-        // Fallback: if we got fewer parts, distribute them or use the whole batch for first unit
-        if (parts.length === 1) {
-          // Translation API merged everything - use the whole result for the first unit
-          // and leave others as original (they'll be reconstructed later)
-          const first = segUnits[0] as any;
-          const key = first.lineIndex !== undefined ? `${segmentIndex}:${first.lineIndex}:${first.tokenIndex}` : `${segmentIndex}:${first.tokenIndex}`;
-          translatedUnits.set(key, translatedBatch);
-        } else {
-          // Distribute available parts, use originals for missing ones
-          for (let i = 0; i < segUnits.length; i++) {
-            const u = segUnits[i] as any;
-            const key = u.lineIndex !== undefined ? `${segmentIndex}:${u.lineIndex}:${u.tokenIndex}` : `${segmentIndex}:${u.tokenIndex}`;
-            translatedUnits.set(key, parts[i] || u.text);
-          }
-        }
-      } else {
-        // Normal path: 1:1 mapping
-        for (let i = 0; i < segUnits.length; i++) {
-          const u = segUnits[i] as any;
-          const key = u.lineIndex !== undefined ? `${segmentIndex}:${u.lineIndex}:${u.tokenIndex}` : `${segmentIndex}:${u.tokenIndex}`;
-          translatedUnits.set(key, parts[i]);
-        }
-      }
-    } catch (error) {
-      console.error('[Translation] Chunk segment batch error:', error);
-      // Fallback to original text for this segment's units
-      for (const unit of segUnits) {
-        const u = unit as any;
-        const key = u.lineIndex !== undefined ? `${segmentIndex}:${u.lineIndex}:${u.tokenIndex}` : `${segmentIndex}:${u.tokenIndex}`;
-        translatedUnits.set(key, u.text);
-      }
-    }
-  }
-
-  const translatedSegments = reconstructSegmentsFromUnits(segments, translatedUnits);
-  return reconstructFromSegments(translatedSegments);
 }
 
 /**
