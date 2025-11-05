@@ -6,10 +6,10 @@ import { ChatGPTService } from './chatgpt';
 import { translateWithMarkdown, translatePreserveFormattingChunk } from './translation';
 import { ChunkAggregator } from '../utils/chunk-aggregator';
 
-const SYSTEM_INSTRUCTION = `You are a helpful AI assistant. The user is communicating with you in Northern Sami (Davvisámegiella), even though you receive and send messages in Norwegian (Bokmål). 
+const SYSTEM_INSTRUCTION = `You are a helpful AI assistant. The user is communicating with you in Northern Sami (Davvisámegiella), even though you receive and send messages in Finnish. 
 
-IMPORTANT: You must respond in a way that is natural for a Sami speaker. The messages you see have been translated from Sami to Norwegian, and your responses will be translated back to Sami. Therefore:
-- Use clear, simple Norwegian that translates well
+IMPORTANT: You must respond in a way that is natural for a Sami speaker. The messages you see have been translated from Sami to Finnish, and your responses will be translated back to Sami. Therefore:
+- Use clear, simple Finnish that translates well
 - Be culturally sensitive to Sami context
 - Avoid idioms or expressions that don't translate well
 - Remember that the end user thinks they are chatting directly in Sami
@@ -131,24 +131,24 @@ export class ChatOrchestrator {
       throw new Error('No active session. Create a session first.');
     }
 
-    // Step 1: Translate user message from Sami to Norwegian
-    console.log('Translating user message from Sami to Norwegian...');
-    const userMessageInNorwegian = await translateWithMarkdown(
+  // Step 1: Translate user message from Sami to Finnish
+    console.log('Translating user message from Sami to Finnish...');
+    const userMessageInFinnish = await translateWithMarkdown(
       userMessageInSami,
-      'sme-nor'
+      'sme-fin'
     );
 
     // Step 2: Add user message to history
     const userMessage: Message = {
       role: 'user',
-      content: userMessageInNorwegian,
+      content: userMessageInFinnish,
     };
     this.currentSession.messages.push(userMessage);
 
     // Step 3: Send to AI provider
     console.log(`Sending message to ${this.currentSession.provider}...`);
     const service = this.getService(this.currentSession.provider);
-    const assistantResponseInNorwegian = await service.sendMessage(
+    const assistantResponseInFinnish = await service.sendMessage(
       this.currentSession.messages,
       this.currentSession.systemInstruction
     );
@@ -156,18 +156,18 @@ export class ChatOrchestrator {
     // Step 4: Add assistant response to history
     const assistantMessage: Message = {
       role: 'assistant',
-      content: assistantResponseInNorwegian,
+      content: assistantResponseInFinnish,
     };
     this.currentSession.messages.push(assistantMessage);
     
     // Save session to persist the conversation
     saveSessionToStorage(this.currentSession);
 
-    // Step 5: Translate response from Norwegian to Sami
-    console.log('Translating response from Norwegian to Sami...');
+  // Step 5: Translate response from Finnish to Sami
+    console.log('Translating response from Finnish to Sami...');
     const assistantResponseInSami = await translateWithMarkdown(
-      assistantResponseInNorwegian,
-      'nor-sme'
+      assistantResponseInFinnish,
+      'fin-sme'
     );
 
     return assistantResponseInSami;
@@ -183,18 +183,18 @@ export class ChatOrchestrator {
       throw new Error('No active session. Create a session first.');
     }
 
-    // Step 1: Translate user message from Sami to Norwegian
-    console.log('Translating user message from Sami to Norwegian...');
-    const userMessageInNorwegian = await translateWithMarkdown(
+  // Step 1: Translate user message from Sami to Finnish
+    console.log('Translating user message from Sami to Finnish...');
+    const userMessageInFinnish = await translateWithMarkdown(
       userMessageInSami,
-      'sme-nor'
+      'sme-fin'
     );
-    console.log('[Orchestrator] User message translated (' + userMessageInNorwegian.length + ' chars):', userMessageInNorwegian);
+    console.log('[Orchestrator] User message translated (' + userMessageInFinnish.length + ' chars):', userMessageInFinnish);
 
     // Step 2: Add user message to history
     const userMessage: Message = {
       role: 'user',
-      content: userMessageInNorwegian,
+      content: userMessageInFinnish,
     };
     this.currentSession.messages.push(userMessage);
 
@@ -212,7 +212,7 @@ export class ChatOrchestrator {
 
     console.log('[Orchestrator] Stream method exists, creating aggregator...');
     
-    let fullResponseInNorwegian = '';
+  let fullResponseInFinnish = '';
     let fullResponseInSami = '';
 
     // Create chunk aggregator that translates at natural breaks
@@ -227,7 +227,7 @@ export class ChatOrchestrator {
         // inner text between markdown formattings to the translation API.
         const translatedChunk = await translatePreserveFormattingChunk(
           textToTranslate,
-          'nor-sme'
+          'fin-sme'
         );
         console.log('[Orchestrator] Translation completed (' + translatedChunk.length + ' chars):', translatedChunk);
         fullResponseInSami += translatedChunk;
@@ -262,7 +262,7 @@ export class ChatOrchestrator {
             streamingStarted = true;
             clearTimeout(timeoutId);
             console.log(`[Orchestrator] Received chunk: ${chunk.length} chars`);
-            fullResponseInNorwegian += chunk;
+            fullResponseInFinnish += chunk;
             // Don't await - let it run in parallel
             aggregator.addChunk(chunk).catch(error => {
               console.error('[Orchestrator] Error adding chunk:', error);
@@ -271,7 +271,7 @@ export class ChatOrchestrator {
           onComplete: async () => {
             clearTimeout(timeoutId);
             console.log('[Orchestrator] AI streaming complete, flushing remaining translations...');
-            console.log(`[Orchestrator] Full Norwegian response: ${fullResponseInNorwegian.length} chars`);
+            console.log(`[Orchestrator] Full Finnish response: ${fullResponseInFinnish.length} chars`);
             try {
               // Flush and wait for ALL translations to complete
               await aggregator.flush();
@@ -281,7 +281,7 @@ export class ChatOrchestrator {
               // Add assistant response to history
               const assistantMessage: Message = {
                 role: 'assistant',
-                content: fullResponseInNorwegian,
+                content: fullResponseInFinnish,
               };
               this.currentSession!.messages.push(assistantMessage);
               

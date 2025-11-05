@@ -6,7 +6,7 @@
 
 **Translation Flow (Core Pattern)**:
 ```
-User (Sami) → translate sme→nor → AI provider (Norwegian) → translate nor→sme → User (Sami)
+User (Sami) → translate sme→fin → AI provider (Finnish) → translate fin→sme → User (Sami)
 ```
 
 **Key Components**:
@@ -62,7 +62,7 @@ const translated = text.replace(/.../, ...); // ❌ Will corrupt markdown
 const aggregator = new ChunkAggregator({
   minChunkSize: 150,  // Accumulate ~2-3 sentences before translating
   onChunkReady: async (chunk) => {
-    const translated = await translatePreserveFormattingChunk(chunk, 'nor-sme');
+    const translated = await translatePreserveFormattingChunk(chunk, 'fin-sme');
     callback.onChunk(translated);
   }
 });

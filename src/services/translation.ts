@@ -22,7 +22,7 @@ const PUBLIC_TARTUNLP_API = 'https://api.tartunlp.ai/translation/v2';
 const MAX_RETRIES = 3; // Retry up to 3 times for transient errors
 const CLIENT_TIMEOUT_MS = 25000; // Abort fetch after 25s on the client side
 
-export type TranslationDirection = 'sme-nor' | 'nor-sme';
+export type TranslationDirection = 'sme-fin' | 'fin-sme';
 
 interface TartuNLPRequest {
   text: string;
@@ -226,14 +226,14 @@ export async function translateWithMarkdown(
     const SEP = '|';
     const batchText = segUnits.map(u => u.text).join(SEP);
     try {
-      // Only log Norwegian texts per user's preference:
-      // - When direction === 'nor-sme', the batchText here is Norwegian (LLM reply).
-      //   Log it as the LLM reply (Norwegian) but do not log translated result.
-      // - When direction === 'sme-nor', the translatedBatch will be Norwegian
-      //   (what will be sent to the LLM); log that after translation.
-      if (direction === 'nor-sme') {
+  // Only log Finnish texts per user's preference:
+  // - When direction === 'fin-sme', the batchText here is Finnish (LLM reply).
+  //   Log it as the LLM reply (Finnish) but do not log translated result.
+  // - When direction === 'sme-fin', the translatedBatch will be Finnish
+  //   (what will be sent to the LLM); log that after translation.
+      if (direction === 'fin-sme') {
         try {
-          console.log('[Translation] LLM reply (Norwegian):', {
+          console.log('[Translation] LLM reply (Finnish):', {
             items: segUnits.length,
             length: batchText.length,
             text: batchText,
@@ -245,9 +245,9 @@ export async function translateWithMarkdown(
 
       const translatedBatch = await translateText(batchText, direction);
 
-      if (direction === 'sme-nor') {
+      if (direction === 'sme-fin') {
         try {
-          console.log('[Translation] Norwegian sent to LLM:', {
+          console.log('[Translation] Finnish sent to LLM:', {
             items: segUnits.length,
             length: translatedBatch.length,
             text: translatedBatch,
@@ -338,9 +338,9 @@ export async function translatePreserveFormattingChunk(
     const SEP = '|';
     const batchText = segUnits.map((u: any) => u.text).join(SEP);
     try {
-      if (direction === 'nor-sme') {
+      if (direction === 'fin-sme') {
         try {
-          console.log('[Translation] LLM reply (Norwegian):', {
+          console.log('[Translation] LLM reply (Finnish):', {
             items: segUnits.length,
             length: batchText.length,
             text: batchText,
@@ -350,9 +350,9 @@ export async function translatePreserveFormattingChunk(
 
       const translatedBatch = await translateText(batchText, direction);
 
-      if (direction === 'sme-nor') {
+      if (direction === 'sme-fin') {
         try {
-          console.log('[Translation] Norwegian sent to LLM:', {
+          console.log('[Translation] Finnish sent to LLM:', {
             items: segUnits.length,
             length: translatedBatch.length,
             text: translatedBatch,

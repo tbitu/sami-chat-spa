@@ -36,7 +36,7 @@ Choose **one** of these:
 ## 🌐 How It Works
 
 ```
-Sami → Translate to Norwegian → AI → Translate to Sami → You
+Sami → Translate to Finnish → AI → Translate to Sami → You
 ```
 
 Translation happens automatically using local TartuNLP models.
