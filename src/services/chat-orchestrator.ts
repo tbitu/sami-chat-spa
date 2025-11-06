@@ -6,7 +6,7 @@ import { ChatGPTService } from './chatgpt';
 import { translateWithMarkdown } from './translation';
 import {
   detectLanguage,
-  isSami,
+  shouldTranslate,
   validateFinnishOutput,
   validateSamiOutput,
 } from '../utils/language-detection';
@@ -27,7 +27,6 @@ Remember: the end user reads the conversation in Northern Sami after translation
 const MAX_LLM_LANGUAGE_RETRIES = 2; // Max retries for wrong language from LLM (Stage 2)
 const MAX_TRANSLATION_RETRIES = 1;  // Max retries for translation quality issues (Stage 3)
 const FINNISH_CONFIDENCE_THRESHOLD = 0.7; // Minimum confidence to accept Finnish output
-const SAMI_BYPASS_THRESHOLD = 0.6; // Minimum confidence to detect non-Sami input
 
 const SESSION_STORAGE_KEY = 'sami_chat_session';
 
@@ -144,23 +143,23 @@ export class ChatOrchestrator {
       throw new Error('No active session. Create a session first.');
     }
 
-    // STAGE 1: Pre-Translation - Detect if input is actually Sami
+    // STAGE 1: Pre-Translation - Detect if input needs translation
     console.log('[Orchestrator] Stage 1: Detecting input language...');
     const inputLangDetection = detectLanguage(userMessageInSami);
     console.log(`[Orchestrator] Detected: ${inputLangDetection.language} (confidence: ${inputLangDetection.confidence.toFixed(2)})`);
 
     let userMessageInFinnish: string;
     
-    if (!isSami(userMessageInSami, SAMI_BYPASS_THRESHOLD)) {
-      // Input is NOT Sami - bypass translation and send directly
+    if (!shouldTranslate(userMessageInSami)) {
+      // Input is clearly NOT Sami (detected as fin/en/nb with confidence) - bypass translation
       console.log(`[Orchestrator] Input is ${inputLangDetection.language}, bypassing sme→fin translation`);
       userMessageInFinnish = userMessageInSami;
       
       // Update system instruction to handle non-Sami input
       // Note: Still require Finnish output for translation back to Sami UI
     } else {
-      // Normal flow: Translate user message from Sami to Finnish
-      console.log('[Orchestrator] Translating user message from Sami to Finnish...');
+      // Normal flow: Translate user message (Sami or unknown) from detected language to Finnish
+      console.log('[Orchestrator] Input is Sami or unknown, translating to Finnish...');
       userMessageInFinnish = await translateWithMarkdown(
         userMessageInSami,
         'sme-fin'

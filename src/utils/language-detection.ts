@@ -1,7 +1,7 @@
 // Language detection utilities for Northern Sami chat application
 // Detects languages at 3 critical checkpoints: pre-translation, post-LLM, post-translation
 
-export type Language = 'sme' | 'fin' | 'en' | 'nb' | 'ru' | 'unknown';
+export type Language = 'sme' | 'fin' | 'en' | 'nb' | 'unknown';
 
 export interface InvalidCharResult {
   isValid: boolean;
@@ -37,13 +37,7 @@ export function detectLanguage(text: string): { language: Language; confidence: 
     fin: 0,
     en: 0,
     nb: 0,
-    ru: 0,
   };
-
-  // Fast path: Check for Cyrillic (Russian)
-  if (hasCyrillic(cleanText)) {
-    scores.ru += 0.8;
-  }
 
   // Character frequency analysis
   scores.sme += getSamiCharScore(cleanText);
@@ -71,11 +65,13 @@ export function detectLanguage(text: string): { language: Language; confidence: 
     }
   }
 
-  // Normalize confidence to 0-1 range (max possible score is ~2.0)
-  const confidence = Math.min(maxScore / 2.0, 1.0);
+  // Normalize confidence to 0-1 range
+  // Max possible score is ~2.5 (keyword: 1.0, char: 0.6, pattern: 0.4)
+  const confidence = Math.min(maxScore / 2.5, 1.0);
 
   // If confidence too low, mark as unknown
-  if (confidence < 0.3) {
+  // Lower threshold to better handle short texts with few but specific indicators
+  if (confidence < 0.2) {
     return { language: 'unknown', confidence };
   }
 
@@ -99,11 +95,16 @@ export function isFinnish(text: string, threshold: number = 0.6): boolean {
 }
 
 /**
- * Check for Cyrillic characters (Russian, etc.)
+ * Check if text should be sent to translation (Sami OR unknown)
+ * This allows graceful handling of undetected Sami text
  */
-function hasCyrillic(text: string): boolean {
-  return /[\u0400-\u04FF]/.test(text);
+export function shouldTranslate(text: string): boolean {
+  const result = detectLanguage(text);
+  // Translate if detected as Sami OR if detection is uncertain/unknown
+  return result.language === 'sme' || result.language === 'unknown';
 }
+
+
 
 /**
  * Score text based on Northern Sami specific characters
@@ -115,8 +116,9 @@ function getSamiCharScore(text: string): number {
   if (!matches) return 0;
 
   // More Sami chars = higher confidence
+  // Give significant weight to Sami-specific diacritics as they're strong indicators
   const charRatio = matches.length / text.length;
-  return Math.min(charRatio * 10, 0.6); // Max 0.6 from char analysis
+  return Math.min(charRatio * 15, 0.8); // Max 0.8 from char analysis (increased from 0.6)
 }
 
 /**
@@ -140,13 +142,24 @@ function getFinnishCharScore(text: string): number {
  * Score text based on English character patterns
  */
 function getEnglishCharScore(text: string): number {
-  // English has high frequency of: w, y (as vowel), q
-  // And lacks special Nordic characters
-  const englishIndicators = /[wq]/gi;
-  const matches = text.match(englishIndicators);
-  if (!matches) return 0;
+  let score = 0;
+  
+  // English has high frequency of: w, q, x
+  // These are rare or absent in Nordic languages
+  const englishIndicators = /[wqx]/gi;
+  const indicatorMatches = text.match(englishIndicators);
+  if (indicatorMatches) {
+    score += Math.min(indicatorMatches.length / text.length * 10, 0.4);
+  }
+  
+  // English lacks Nordic special characters
+  // Give penalty if Nordic chars are present
+  const nordicChars = /[áčđŋšŧžäöæøå]/gi;
+  if (nordicChars.test(text)) {
+    score = Math.max(0, score - 0.3);
+  }
 
-  return Math.min(matches.length / text.length * 8, 0.3);
+  return score;
 }
 
 /**
@@ -166,9 +179,21 @@ function getNorwegianCharScore(text: string): number {
  */
 function getSamiKeywordScore(text: string): number {
   const samiWords = [
-    'lea', 'leat', 'dát', 'dat', 'mii', 'gii', 'go', 'vai', 'ahte',
-    'dahje', 'muhto', 'ja', 'vai', 'son', 'sii', 'don', 'mun',
-    'gii', 'maid', 'man', 'gos', 'goas', 'movt',
+    // Common verbs and particles
+    'lea', 'leat', 'leamaš', 'lean', 'livččii', 'ii', 'eai', 'leage',
+    // Pronouns and demonstratives
+    'dát', 'dat', 'mii', 'gii', 'son', 'sii', 'don', 'mun', 'moai', 'soai',
+    // Question words
+    'gii', 'maid', 'man', 'gos', 'goas', 'movt', 'manna', 'goappá', 'man', 'masa',
+    // Conjunctions and particles (removed 'ja' - ambiguous with Finnish/Norwegian)
+    'go', 'vai', 'ahte', 'dahje', 'muhto', 'dahjege', 'ge', 'fal', 'gal',
+    // Common greetings and words
+    'bures', 'buorre', 'giitu', 'ádja', 'báze', 'mana', 'beaivi', 'rávesolbmot',
+    // Postpositions and common words
+    'okta', 'guokte', 'golbma', 'njeallje', 'viđa', 'dáppe', 'doppe', 'diekko',
+    // Other common words
+    'čállit', 'oaidnit', 'gullan', 'jáhkku', 'sáhttá', 'háliida', 'háliidan',
+    'ovdal', 'maŋŋá', 'dál', 'odne', 'ihttin', 'bearjadis', 'sámegiella',
   ];
 
   let matches = 0;
@@ -180,7 +205,8 @@ function getSamiKeywordScore(text: string): number {
   }
 
   // Each matched word adds to confidence
-  return Math.min(matches * 0.15, 0.8);
+  // Increased weight for keyword matches since they're highly specific
+  return Math.min(matches * 0.25, 1.0);
 }
 
 /**
@@ -188,9 +214,19 @@ function getSamiKeywordScore(text: string): number {
  */
 function getFinnishKeywordScore(text: string): number {
   const finnishWords = [
-    'on', 'ovat', 'että', 'jos', 'kun', 'tai', 'ja', 'ei', 'ole',
-    'voi', 'olla', 'tämä', 'se', 'niin', 'mutta', 'kuin', 'kaikki',
-    'hän', 'he', 'minä', 'sinä', 'mitä', 'mikä', 'missä', 'milloin',
+    // Verbs and copula
+    'on', 'ovat', 'oli', 'ollut', 'olla', 'ole', 'ei', 'eivät', 'en', 'et',
+    'voi', 'voida', 'pitää', 'täytyy', 'tulla', 'mennä', 'tehdä', 'sanoa',
+    // Pronouns
+    'hän', 'he', 'minä', 'sinä', 'me', 'te', 'se', 'ne', 'tämä', 'nämä',
+    'tuo', 'nuo', 'joka', 'mikä', 'kuka',
+    // Question words
+    'mitä', 'missä', 'milloin', 'miksi', 'miten', 'kuinka',
+    // Conjunctions and particles
+    'että', 'jos', 'kun', 'tai', 'ja', 'mutta', 'kuin', 'vaan', 'sekä',
+    'niin', 'siis', 'koska', 'kuitenkin', 'myös',
+    // Common words
+    'kaikki', 'joku', 'jokin', 'ei', 'vielä', 'nyt', 'sitten', 'aina',
   ];
 
   let matches = 0;
@@ -201,7 +237,8 @@ function getFinnishKeywordScore(text: string): number {
     }
   }
 
-  return Math.min(matches * 0.15, 0.8);
+  // Increased weight for Finnish keywords
+  return Math.min(matches * 0.20, 1.0);
 }
 
 /**
@@ -209,9 +246,22 @@ function getFinnishKeywordScore(text: string): number {
  */
 function getEnglishKeywordScore(text: string): number {
   const englishWords = [
-    'the', 'is', 'are', 'that', 'if', 'when', 'or', 'and', 'not', 'can',
-    'will', 'would', 'this', 'what', 'where', 'how', 'who', 'why',
-    'have', 'has', 'had', 'do', 'does', 'did',
+    // Articles and determiners
+    'the', 'a', 'an', 'this', 'that', 'these', 'those', 'some', 'any',
+    // Verbs
+    'is', 'are', 'was', 'were', 'be', 'been', 'being', 'am',
+    'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing',
+    'can', 'could', 'will', 'would', 'shall', 'should', 'may', 'might', 'must',
+    // Pronouns
+    'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them',
+    'my', 'your', 'his', 'her', 'its', 'our', 'their',
+    // Prepositions and conjunctions
+    'of', 'in', 'on', 'at', 'to', 'for', 'with', 'from', 'by', 'about',
+    'and', 'or', 'but', 'if', 'when', 'while', 'because', 'so', 'than',
+    // Question words
+    'what', 'where', 'when', 'why', 'how', 'who', 'which',
+    // Common words
+    'not', 'no', 'yes', 'there', 'here', 'now', 'then', 'all', 'some',
   ];
 
   let matches = 0;
@@ -222,7 +272,8 @@ function getEnglishKeywordScore(text: string): number {
     }
   }
 
-  return Math.min(matches * 0.15, 0.8);
+  // Increased weight for English keywords
+  return Math.min(matches * 0.20, 1.0);
 }
 
 /**
@@ -230,9 +281,20 @@ function getEnglishKeywordScore(text: string): number {
  */
 function getNorwegianKeywordScore(text: string): number {
   const norwegianWords = [
-    'er', 'er', 'at', 'hvis', 'når', 'eller', 'og', 'ikke', 'kan',
-    'vil', 'være', 'dette', 'hva', 'hvor', 'hvordan', 'hvem', 'hvorfor',
-    'har', 'hadde', 'gjør', 'gjorde',
+    // Verbs and copula
+    'er', 'var', 'være', 'har', 'hadde', 'ha', 'kan', 'kunne', 'vil', 'ville',
+    'skal', 'skulle', 'må', 'måtte', 'bli', 'ble', 'blitt', 'gjøre', 'gjorde',
+    'si', 'sa', 'sagt', 'komme', 'gå', 'få', 'fikk',
+    // Pronouns
+    'jeg', 'du', 'han', 'hun', 'vi', 'dere', 'de', 'den', 'det',
+    'denne', 'dette', 'disse', 'som', 'hvilken', 'hvilket', 'hvem',
+    // Question words
+    'hva', 'hvor', 'hvordan', 'hvorfor', 'når', 'hvem',
+    // Conjunctions and particles
+    'at', 'hvis', 'eller', 'og', 'men', 'ikke', 'også', 'bare', 'enn',
+    'som', 'fordi', 'da', 'så', 'altså',
+    // Common words
+    'alle', 'noen', 'ingen', 'noe', 'alt', 'her', 'der', 'nå', 'da',
   ];
 
   let matches = 0;
@@ -243,7 +305,8 @@ function getNorwegianKeywordScore(text: string): number {
     }
   }
 
-  return Math.min(matches * 0.15, 0.8);
+  // Increased weight for Norwegian keywords
+  return Math.min(matches * 0.20, 1.0);
 }
 
 /**

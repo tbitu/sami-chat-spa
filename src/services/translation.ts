@@ -161,8 +161,9 @@ async function translateText(
     });
 
     // If fetch was aborted by our timeout, surface a clearer message
-    // In browsers the error name is usually 'AbortError'
-    if ((error as any)?.name === 'AbortError') {
+  // In browsers the error name is usually 'AbortError'
+  const _err = error as { name?: string };
+  if (_err?.name === 'AbortError') {
       if (retryCount < MAX_RETRIES) {
         // exponential backoff before retrying
         const backoff = 1000 * Math.pow(2, retryCount);
@@ -300,7 +301,7 @@ export async function translateWithMarkdown(
         // Fallback: if we got fewer parts, distribute them or use the whole batch for first unit
         if (parts.length === 1) {
           // Translation API merged everything - use the whole result for the first unit
-          const first = segUnits[0] as any;
+          const first = segUnits[0] as TranslationUnit;
           const key = first.lineIndex !== undefined ? `${segmentIndex}:${first.lineIndex}:${first.tokenIndex}` : `${segmentIndex}:${first.tokenIndex}`;
           translatedUnits.set(key, translatedBatch);
         } else if (parts.length > segUnits.length) {
@@ -310,7 +311,7 @@ export async function translateWithMarkdown(
           
           let partIndex = 0;
           for (let i = 0; i < segUnits.length; i++) {
-            const u = segUnits[i] as any;
+            const u = segUnits[i] as TranslationUnit;
             const key = u.lineIndex !== undefined ? `${segmentIndex}:${u.lineIndex}:${u.tokenIndex}` : `${segmentIndex}:${u.tokenIndex}`;
             
             if (partIndex >= parts.length) {
@@ -379,7 +380,7 @@ export async function translateWithMarkdown(
           
           let partIndex = 0;
           for (let i = 0; i < segUnits.length; i++) {
-            const u = segUnits[i] as any;
+            const u = segUnits[i] as TranslationUnit;
             const key = u.lineIndex !== undefined ? `${segmentIndex}:${u.lineIndex}:${u.tokenIndex}` : `${segmentIndex}:${u.tokenIndex}`;
             
             if (partIndex >= parts.length) {
@@ -443,7 +444,7 @@ export async function translateWithMarkdown(
       } else {
         // Normal path: 1:1 mapping
         for (let i = 0; i < segUnits.length; i++) {
-          const u = segUnits[i] as any;
+          const u = segUnits[i] as TranslationUnit;
           const key = u.lineIndex !== undefined ? `${segmentIndex}:${u.lineIndex}:${u.tokenIndex}` : `${segmentIndex}:${u.tokenIndex}`;
           
           // Check if translation is corrupted and needs retry
@@ -465,8 +466,8 @@ export async function translateWithMarkdown(
     } catch (error) {
       console.error('[Translation] Segment batch error:', error);
       // Fallback to original text for this segment's units
-      for (const unit of segUnits) {
-        const u = unit as any;
+        for (const unit of segUnits) {
+        const u = unit as TranslationUnit;
         const key = u.lineIndex !== undefined ? `${segmentIndex}:${u.lineIndex}:${u.tokenIndex}` : `${segmentIndex}:${u.tokenIndex}`;
         translatedUnits.set(key, u.text);
       }

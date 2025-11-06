@@ -383,7 +383,7 @@ export function reconstructFromSegments(segments: MarkdownSegment[]): string {
  */
 export function extractTranslatableText(segments: MarkdownSegment[]): string[] {
   // Use same translatability rules as the inline-with-debug extractor
-  const isHorizontalRule = (s: string) => /^\s*([*_\-])(?:\s*\1){2,}\s*$/.test(s.trim());
+  const isHorizontalRule = (s: string) => /^\s*([-*_])(?:\s*\1){2,}\s*$/.test(s.trim());
   return segments
     .filter(segment => {
       if (segment.type === 'code') return false;
@@ -460,7 +460,7 @@ export function tokenizeSegmentContent(content: string): Token[] {
 export function extractTranslationUnits(segments: MarkdownSegment[]): TranslationUnit[] {
   const units: TranslationUnit[] = [];
 
-  const isHorizontalRule = (s: string) => /^\s*([*_\-])(?:\s*\1){2,}\s*$/.test(s.trim());
+  const isHorizontalRule = (s: string) => /^\s*([-*_])(?:\s*\1){2,}\s*$/.test(s.trim());
 
   segments.forEach((segment, si) => {
     // skip non-translatable segments
@@ -512,20 +512,25 @@ export function reconstructSegmentsFromUnits(segments: MarkdownSegment[], transl
           if (t.kind === 'inline-code') return t.original || (t.wrapperStart || '`') + t.text + (t.wrapperEnd || '`');
           const translated = translatedUnits.get(key) || t.text;
           switch (t.kind) {
-            case 'text':
+            case 'text': {
               // Preserve leading/trailing whitespace from original token
               const originalLeadingSpace = t.text.match(/^\s+/)?.[0] || '';
               const originalTrailingSpace = t.text.match(/\s+$/)?.[0] || '';
               const trimmedTranslated = translated.trim();
               return originalLeadingSpace + trimmedTranslated + originalTrailingSpace;
-            case 'bold':
+            }
+            case 'bold': {
               return `${t.wrapperStart || '**'}${translated}${t.wrapperEnd || '**'}`;
-            case 'italic':
+            }
+            case 'italic': {
               return `${t.wrapperStart || '_'}${translated}${t.wrapperEnd || '_'}`;
-            case 'link':
+            }
+            case 'link': {
               return `[${translated}](${t.url || ''})`;
-            default:
+            }
+            default: {
               return translated;
+            }
           }
         }).join('');
         return rebuilt;
@@ -541,22 +546,27 @@ export function reconstructSegmentsFromUnits(segments: MarkdownSegment[], transl
       if (t.kind === 'inline-code') return t.original || (t.wrapperStart || '`') + t.text + (t.wrapperEnd || '`');
       const translated = translatedUnits.get(key) || t.text;
       switch (t.kind) {
-        case 'text':
+        case 'text': {
           // Preserve leading/trailing whitespace from original token
           // Translation API may trim spaces, but we need them for proper formatting
           const originalLeadingSpace = t.text.match(/^\s+/)?.[0] || '';
           const originalTrailingSpace = t.text.match(/\s+$/)?.[0] || '';
           const trimmedTranslated = translated.trim();
           return originalLeadingSpace + trimmedTranslated + originalTrailingSpace;
-        case 'bold':
+        }
+        case 'bold': {
           return `${t.wrapperStart || '**'}${translated}${t.wrapperEnd || '**'}`;
-        case 'italic':
+        }
+        case 'italic': {
           return `${t.wrapperStart || '_'}${translated}${t.wrapperEnd || '_'}`;
-        case 'link':
+        }
+        case 'link': {
           // t.url exists
           return `[${translated}](${t.url || ''})`;
-        default:
+        }
+        default: {
           return translated;
+        }
       }
     }).join('');
 
@@ -574,7 +584,7 @@ const segmentInlineElements: Map<number, InlineMarkdown[]> = new Map();
 export function extractTranslatableTextWithInline(segments: MarkdownSegment[]): string[] {
   segmentInlineElements.clear();
   let segmentIndex = 0;
-  const isHorizontalRule = (s: string) => /^\s*([*_\-])(?:\s*\1){2,}\s*$/.test(s.trim());
+  const isHorizontalRule = (s: string) => /^\s*([-*_])(?:\s*\1){2,}\s*$/.test(s.trim());
 
   return segments
     .filter(segment => {
@@ -604,7 +614,7 @@ export function extractTranslatableTextWithInlineDebug(segments: MarkdownSegment
   const texts: string[] = [];
   const inlinePerSegment: InlineMarkdown[][] = [];
 
-  const isHorizontalRule = (s: string) => /^\s*([*_\-])(?:\s*\1){2,}\s*$/.test(s.trim());
+  const isHorizontalRule = (s: string) => /^\s*([-*_])(?:\s*\1){2,}\s*$/.test(s.trim());
 
   for (const segment of segments.filter(s => {
     if (s.type === 'code') return false;
@@ -634,7 +644,7 @@ export function applyTranslations(
   translations: string[]
 ): MarkdownSegment[] {
   let translationIndex = 0;
-  const isHorizontalRule = (s: string) => /^\s*([*_\-])(?:\s*\1){2,}\s*$/.test(s.trim());
+  const isHorizontalRule = (s: string) => /^\s*([-*_])(?:\s*\1){2,}\s*$/.test(s.trim());
 
   return segments.map(segment => {
     // Use same translatability rules as extraction
@@ -693,5 +703,5 @@ export function hasMarkdown(text: string): boolean {
 export function sanitizePlaceholders(text: string): string {
   if (!text) return text;
   // Remove both @@TOKEN_1@@ and @TOKEN_1@ and __TOKEN_1__ forms
-  return text.replace(/(@@?|__)[A-Z\-]+_?\d+(@@?|__)/g, '').replace(/@{1}[A-Z\-]+_?\d+/g, '');
+  return text.replace(/(@@?|__)[A-Z-]+_?\d+(@@?|__)/g, '').replace(/@{1}[A-Z-]+_?\d+/g, '');
 }
