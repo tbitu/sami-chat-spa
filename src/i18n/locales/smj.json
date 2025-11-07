@@ -1,0 +1,53 @@
+{
+  "apiConfig": {
+    "title": "APIajmudibme",
+    "description": "Hiebada makkár API:ajt åvddåla ájgo adnet. Máhtá mierredit avtav jali goappátjijt",
+    "translationServiceLabel": "Jårggålimdievnastus",
+    "translationServiceOptions": {
+      "local-llm": "Local LLM (localhost:8000)",
+      "tartunlp-public": "TartuNLP Public API"
+    },
+    "geminiKeyLabel": "Google Gemini API-tjoavdda (válljimláhkáj)",
+    "openaiKeyLabel": "OpenAI API-tjoavdda (mælggat)",
+    "fetchModelsLoading": "modellajt viedtjat...",
+    "submit": "Álgada",
+    "errors": {
+      "atLeastOne": "Tjále binnemusát avtav API-tjoavddagav",
+      "geminiFormat": "Gemini API čoavdda ferte álgit \"AIza\"-boaluin",
+      "openaiFormat": "OpenAI API-tjoavdos viertti álgget 'sk-'"
+    },
+    "noteTitle": "Huomaha",
+    "noteBody": "API-tjåvda máhtti bigodit máksemusáv jali persåvnålasj dáhtájt. Tjiegada dajt ja aná dåssju luohtádum dievnastusájt."
+  },
+  "chatInterface": {
+    "title": "Sami Chat",
+    "empty": {
+      "welcome": "Buorisboahtem!",
+      "hint": "Gatjáda avtav gatjálvisáv ságastallamav álgadittjat."
+    },
+    "streaming": "Vásstádusáv oadtju...",
+    "inputPlaceholder": "Tjále dási duv diedádusáv...",
+    "send": "Sáddi",
+    "preserveFormatting": "Bisuhit formáhttem"
+  },
+  "message": {
+    "user": "Dån",
+    "assistant": "Assisten-",
+    "originalBadge": "Álgos",
+    "streamingErrorPrefix": "Feil under streaming:"
+  },
+  "errors": {
+    "translationQuality": "Gássjelisvuohta jårggålime hárráj ielveduváj. Gähttjala rievddadit gatjálvisáv.",
+    "fallbackWarning": "Várrehus: Jorgalanváttisvuođat áicojuvvon: @PH0@@. Tæksta ma li jårggåluvvam dánna ij máhte åskåldis liehket.",
+    "languageDetection": "ittjij gielav dåbdå. Gæhttjala tjállet nuorttasámegiellaj.",
+    "llmLanguage": "AI vásstedij boasto gielajn. Gehtjav vas...",
+    "invalidCharacters": "Jårggålibme sisanet fámodis merkajt. Gehtjav vas...",
+    "translationArtifacts": "Jårggålimvige gávnaduváj. Gähttjala ietjá bágoj javllat.",
+    "retryFailed": "Ådå gæhttjalibme ittjij nagá. Gähttjala ietjá láhkáj gatjálvisáv ådåsis javllat."
+  },
+  "menu": {
+    "resetPersistence": "Máhtsasta vuorkáv",
+    "salke": "Ådå ságastallam",
+    "modelSelectorTitle": "Modælla"
+  }
+}

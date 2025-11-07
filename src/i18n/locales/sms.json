@@ -1,0 +1,53 @@
+{
+  "apiConfig": {
+    "title": "API:t",
+    "description": "heivehit makkár olgguldas API: id fertet geavahit. Vuäitak tuõttâd õõut le'be kuhttuid",
+    "translationServiceLabel": "Jurgâlempalvâlus",
+    "translationServiceOptions": {
+      "local-llm": "Local LLM (localhost:8000)",
+      "tartunlp-public": "TartoNLP Public API"
+    },
+    "geminiKeyLabel": "Google Gemini API-tää'ss (mie'lddlaž)",
+    "openaiKeyLabel": "OpenAI API-täävv (mõõlǥtõs)",
+    "fetchModelsLoading": "Lââʹzzte modeellid...",
+    "submit": "Start",
+    "errors": {
+      "atLeastOne": "Täytä vähintään yksi API-avain",
+      "geminiFormat": "Gemini API-vuä'ppõs âlgg aalǥed 'AIza",
+      "openaiFormat": "OpenAI API-vuä'ppõs âlgg aalǥed 'sk-'"
+    },
+    "noteTitle": "Huom:",
+    "noteBody": "API-vuä'ppõõzz vuei'tte pâi'lǩiõččâd teäggtõõzz le'be personteâđaid. pitää ne salassa ja käyttää pelkästään luotettuja palveluja."
+  },
+  "chatInterface": {
+    "title": "Sámi Chat",
+    "empty": {
+      "welcome": "Tiõrv pueʹttem!",
+      "hint": "Jeara gažaldaga vai sáhttá álggahit ságastallama."
+    },
+    "streaming": "Vuâǯǯai vasttõõzz...",
+    "inputPlaceholder": "Ǩee'rjet vuõiǥeed teâttâd tä'st...",
+    "send": "Sádde",
+    "preserveFormatting": "pitee muõtt"
+  },
+  "message": {
+    "user": "dån",
+    "assistant": "assisteehted",
+    "originalBadge": "Alkuperäisessä",
+    "streamingErrorPrefix": "Virhe suoratoistopalvelun aikana:"
+  },
+  "errors": {
+    "translationQuality": "Jåårǥlâttmõõžžâst lij šurrmõš. Ǩiõččlââ'stt mååusat kõõččmõõžž.",
+    "fallbackWarning": ". Várrehus: Jorgalanváttisvuođat fuomášuvvon: @PH0@@. Jåårǥlâttum teʹkstt vuâllai vuäiʹtte leeʹd ååsktum.",
+    "languageDetection": "Jieh pyevti tubdâđ kielâ. Te'l ǩiõččlõõđte ǩee'rjted tâ'vvsäämas.",
+    "llmLanguage": "AI västidij puástud kiellân. ǩiõččlââttmõõžžâst..",
+    "invalidCharacters": "Jåårǥlâttmõõ âst liâ viõkkčääʹzz. ǩiõččlââttmõõžžâst..",
+    "translationArtifacts": "Jåårǥlâʹttemvueʹǩǩ. Ǩiõččlââ'stt mååusat.",
+    "retryFailed": "Ođđ ǩiččlõõttmõš meâtt. Ǩiõččlââ'stt mååust säärnõõttâd kõõččmõõžž jee'resnalla."
+  },
+  "menu": {
+    "resetPersistence": ") Máhcat vurkema",
+    "salke": "Ođđ saǥstõõllmuš",
+    "modelSelectorTitle": "Määll"
+  }
+}

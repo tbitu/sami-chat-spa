@@ -1,6 +1,6 @@
 {
   "apiConfig": {
-    "title": "API-heivehus",
+    "title": "API.",
     "description": "Heivet makkár olgguldas API: id geavahit. Sáhtát válljet ovtta dahje goappašiid.",
     "translationServiceLabel": "Jorgalanbálvalus",
     "translationServiceOptions": {
@@ -27,7 +27,8 @@
     },
     "streaming": "Vuostáiváldá vástádusa...",
     "inputPlaceholder": "Čále dieđáhusa dása...",
-    "send": "Sádde"
+    "send": "Sádde",
+    "preserveFormatting": "Bisuhit hámidivvon"
   },
   "message": {
     "user": "Don",
@@ -36,15 +37,17 @@
     "streamingErrorPrefix": "Meattáhus čájehettiin:"
   },
   "errors": {
-    "translationQuality": "Jorgalusas ledje váttásat. Geahččal ođasit, dahje orro sáhka earáháhkan.",
-    "languageDetection": "Ii dovddán giela. Geahččal čállit davvisámegillii.",
-    "llmLanguage": "AI vástideaddji frámmášii boastto gielas. Geahččal ođasit.",
-    "invalidCharacters": "Jorgalus sisttisdoallá eahpešievvan mearkkagiid. Geahččal ođasit.",
-    "translationArtifacts": "Jorgalusdihtor ráhkadii boasttuid. Geahččal ođasit dahje čále earáládje.",
-    "retryFailed": "Ollešattaneami maiddái earret oktii, muhto eai lihkostuvvon. Geahččal earáládje čállojuvvon sáni."
+    "translationQuality": "Jorgalusa kvalitehtaváttisvuođat fuomášuvvon. Geahččal molsut gažaldaga.",
+    "fallbackWarning": "Váruhus: Jorgalanváttisvuođat fuomášuvvon: @PH0@@. Jorgaluvvon teaksta dás vuolábealde ii leat luohtehahtti.",
+    "languageDetection": "Ii gávdnan giela. Geahččal čállit davvisámegillii.",
+    "llmLanguage": "AI vástidii boasttu gillii. Geahččalan ođđasit...",
+    "invalidCharacters": "Jorgalusas leat gustohis bustávat. Geahččalan ođđasit...",
+    "translationArtifacts": "Jorgalanmeattáhus gávdnon. Geahččal molsut cealkaga.",
+    "retryFailed": "Ođđa geahččaleapmi filtii. Geahččal molsut gažaldaga eará láhkai."
   },
   "menu": {
-    "resetPersistence": "Gaskalusat čájehisvuođa",
-    "salke": "Sálke"
+    "resetPersistence": "Máhcat vurkema",
+    "salke": "Ođđa ságastallan",
+    "modelSelectorTitle": "Málle"
   }
 }

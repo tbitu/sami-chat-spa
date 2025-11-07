@@ -1,0 +1,53 @@
+{
+  "apiConfig": {
+    "title": "API-konfiguvre",
+    "description": "Sjïehtedh mïsse dah byjngetje API:h edtjieh åtnasovvedh Datne maahtah aktem jallh gåabpegh dievhtedh",
+    "translationServiceLabel": "Jorgalanbálvalus",
+    "translationServiceOptions": {
+      "local-llm": "Local LLM (localhost:8000)",
+      "tartunlp-public": "TartoNLP Public API"
+    },
+    "geminiKeyLabel": "Google Gemini API-tjoevtenje (nuepie)",
+    "openaiKeyLabel": "OpenAI API-tjoevtenje (ellies)",
+    "fetchModelsLoading": "Maallh bæjjese vaalta ...",
+    "submit": "alga",
+    "errors": {
+      "atLeastOne": "Tjaelieh vaenemes aktem API-tjoevtenjem",
+      "geminiFormat": "Gemini API-tjoevtenje tjuara aelkedh 'AIza'",
+      "openaiFormat": "OpenAI API-tjoevtenje tjuara 'sk-'"
+    },
+    "noteTitle": "Tsiehkieh:",
+    "noteBody": "API-tjoevtenjh maehtieh maeksemem jallh persovneles daata vuesiehtidh . Bïevnieh dejtie sekretessesne jïh nuhtjh ajve vadteme dïenesjh ."
+  },
+  "chatInterface": {
+    "title": "Saemien chat",
+    "empty": {
+      "welcome": "Buerie båeteme !",
+      "hint": "Gyhtjelassem gihtjedh juktie soptsestimmiem aelkedh ."
+    },
+    "streaming": "Vaestiedassem dååste ...",
+    "inputPlaceholder": "Tjaelieh dov dïjrem daesnie ...",
+    "send": "Seedth",
+    "preserveFormatting": "Haemiedisjvem bisuhth"
+  },
+  "message": {
+    "user": "Datne",
+    "assistant": "Veahkki",
+    "originalBadge": "Originaleles",
+    "streamingErrorPrefix": "Meadtaladteme saadtegisnie:"
+  },
+  "errors": {
+    "translationQuality": "Dåeriesmoerh jarkoestimmiem gaavneme . Pryövh gyhtjelassem jeatjahlaakan hammoedidh .",
+    "fallbackWarning": "Aajhtese: Jarkoestimmie dåeriesmoerh aajhtseme: @PH0@. Dah jarkoestamme teksth vuelielisnie maehtieh ov-leejnes årrodh .",
+    "languageDetection": "Idtji maehtieh gïelem damtijidh. Voejhkele tjaeledh julevsaemien gïelesne .",
+    "llmLanguage": "AI miste gïeline vaestiedi. Pryövem viht ...",
+    "invalidCharacters": ". Jorgalusas leat gustohis bustávat. Pryövem viht ...",
+    "translationArtifacts": "Jorgalanmeattáhus gávdnui. Pryövh viht jeatjahlaakan .",
+    "retryFailed": ") Ođđa geahččaleapmi filtii. Voejhkelidie gyhtjelassem jeatjahlaakan jeerehtidh ."
+  },
+  "menu": {
+    "resetPersistence": "Bååstede vöörhkeme",
+    "salke": "Orre soptsese",
+    "modelSelectorTitle": "Maalle"
+  }
+}

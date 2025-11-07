@@ -1,0 +1,53 @@
+{
+  "apiConfig": {
+    "title": "API-sajattâh",
+    "description": "Muštâl, maid olgoldâs API:id tun halijdah kevttiđ. Tun puávtáh toimâđ oovtâ teikkâ kuohtuid.",
+    "translationServiceLabel": "Jurgâlempalvâlus",
+    "translationServiceOptions": {
+      "local-llm": "Local LLM (localhost:8000)",
+      "tartunlp-public": "TartoNLP Public API"
+    },
+    "geminiKeyLabel": "Google Gemini API-čuávdus (molsâiävtulâš)",
+    "openaiKeyLabel": "OpenAI API-čuávji (molsâiävtuh)",
+    "fetchModelsLoading": "Viežžâmin mallijd...",
+    "submit": "alga",
+    "errors": {
+      "atLeastOne": ". Čális unnimusat ovtta API-čoavdaga",
+      "geminiFormat": "čoavdda ferte álgit \"AIza\"-nupuin",
+      "openaiFormat": "OpenAI API-čuávdus kalga älgiđ 'sk-'"
+    },
+    "noteTitle": "Huom:",
+    "noteBody": "API-čyegis puáhtá olgospyehtiđ reekkigijd teikâ persovnlijd tiäđuid. toollâđ taid syeligâsávt já kevttiđ tuše luáttámušlâš palvâlusâid."
+  },
+  "chatInterface": {
+    "title": "Säämi Chat",
+    "empty": {
+      "welcome": "Pyereestpuáttim!",
+      "hint": "Jeäđih koijâdâs vâi puáhtá algâttiđ savâstâllâm."
+    },
+    "streaming": "Vuástáväldimeh...",
+    "inputPlaceholder": "Čääli tuu viestâ täst...",
+    "send": "Sádde",
+    "preserveFormatting": "pitee hámid"
+  },
+  "message": {
+    "user": "dån",
+    "assistant": "Veahkki",
+    "originalBadge": "Alkuperäisessä",
+    "streamingErrorPrefix": "Feilâ vuolgâttijn:"
+  },
+  "errors": {
+    "translationQuality": "Jurgâlem kvaliteetvädisvuotâ lii huámmášum. Pyeri keččâliđ rievdâdiđ koččâmuš.",
+    "fallbackWarning": ". Várrehus: Jorgalanváttisvuođat fuomášuvvon: @PH0@. Vuoluupiälááš jurgâlum tekstâ ij pyevti leđe oskottettee.",
+    "languageDetection": "Jieh puáhtám tubdâđ kielâ. Pyeri viggâđ čäälliđ tavesämikielân.",
+    "llmLanguage": "AI västidij puástu kiellân. Keččâl uđđâsist...",
+    "invalidCharacters": "Jurgâlusâst láá rievhis pustaveh. Keččâleh uđđâsist...",
+    "translationArtifacts": "Jorgalanmeattáhus lea gávdnon. Pyeri keččâliđ molsođ saanijd.",
+    "retryFailed": "Uđđâ irâttâs ij luhostum. Pyeri viggâđ rievdâdiđ koččâmuš eresnáál."
+  },
+  "menu": {
+    "resetPersistence": "Maassâd vyerkkejum",
+    "salke": "Ođđa háleštallan",
+    "modelSelectorTitle": "Málle"
+  }
+}

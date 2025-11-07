@@ -27,7 +27,8 @@
     },
     "streaming": "Mottar svar...",
     "inputPlaceholder": "Skriv meldingen din her...",
-    "send": "Send"
+    "send": "Send",
+    "preserveFormatting": "Behold formatering"
   },
   "message": {
     "user": "Du",
@@ -37,6 +38,7 @@
   },
   "errors": {
     "translationQuality": "Kvalitetsproblem med oversettelse oppdaget. Vennligst prøv å omformulere spørsmålet.",
+    "fallbackWarning": "Advarsel: oversettelsesproblemer oppdaget: {{errors}}. Den oversatte teksten nedenfor kan være upålitelig.",
     "languageDetection": "Kunne ikke gjenkjenne språk. Vennligst prøv å skrive på nordsamisk.",
     "llmLanguage": "AI svarte på feil språk. Prøver på nytt...",
     "invalidCharacters": "Oversettelsen inneholder ugyldige tegn. Prøver på nytt...",
@@ -45,6 +47,7 @@
   },
   "menu": {
     "resetPersistence": "Tilbakestill lagring",
-    "salke": "Sálke"
+    "salke": "Ny samtale",
+    "modelSelectorTitle": "Modell"
   }
 }

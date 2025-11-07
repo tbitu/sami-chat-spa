@@ -2,15 +2,26 @@ import { useEffect, useState } from 'react';
 import { ChatInterface } from './components/ChatInterface';
 import { ApiConfig } from './components/ApiConfig';
 import { ChatOrchestrator } from './services/chat-orchestrator';
-import { AIProvider, TranslationService } from './types/chat';
+import { AIProvider, TranslationService, SamiLanguage } from './types/chat';
 import { configureTranslationService } from './services/translation';
 import './App.css';
+import { useTranslation } from 'react-i18next';
 
 
 function App() {
+  const { i18n } = useTranslation();
   
   const [orchestrator, setOrchestrator] = useState<ChatOrchestrator | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [samiLanguage, setSamiLanguage] = useState<SamiLanguage>(() => {
+    // Load saved language from localStorage or default to Northern Sami
+    try {
+      const saved = localStorage.getItem('sami_chat_language') as SamiLanguage;
+      return saved || 'sme';
+    } catch {
+      return 'sme';
+    }
+  });
 
   // persisted API-related localStorage keys are managed in the Chat header
 
@@ -20,8 +31,11 @@ function App() {
     translationService: TranslationService,
     geminiModel?: string
   ) => {
-    // Configure translation service
-    configureTranslationService({ service: translationService });
+    // Configure translation service with current Sami language
+    configureTranslationService({ 
+      service: translationService,
+      samiLanguage,
+    });
     
     const orch = new ChatOrchestrator(geminiKey, openaiKey, geminiModel);
     
@@ -39,6 +53,28 @@ function App() {
     setOrchestrator(orch);
   };
 
+  const handleLanguageChange = (language: SamiLanguage) => {
+    // Save to localStorage
+    try {
+      localStorage.setItem('sami_chat_language', language);
+    } catch (e) {
+      console.warn('Failed to save language to localStorage:', e);
+    }
+    
+    // Update state
+    setSamiLanguage(language);
+    
+    // Update UI language
+    i18n.changeLanguage(language);
+    
+    // Reconfigure translation service with new language
+    const storedTranslation = (localStorage.getItem('sami_chat_translation_service') || 'tartunlp-public') as TranslationService;
+    configureTranslationService({
+      service: storedTranslation,
+      samiLanguage: language,
+    });
+  };
+
   // Auto-configure from localStorage if keys exist
   useEffect(() => {
     try {
@@ -47,6 +83,11 @@ function App() {
         const storedOpenai = localStorage.getItem('sami_chat_openai_key') || '';
         const storedModel = localStorage.getItem('sami_chat_gemini_model') || undefined;
         const storedTranslation = (localStorage.getItem('sami_chat_translation_service') || 'tartunlp-public') as TranslationService;
+
+        // Sync i18n language with saved Sami language
+        if (samiLanguage !== i18n.language) {
+          i18n.changeLanguage(samiLanguage);
+        }
 
         if ((storedGemini && storedGemini.trim()) || (storedOpenai && storedOpenai.trim())) {
           // Defer configuration until next tick to avoid React state update during render
@@ -58,8 +99,9 @@ function App() {
     }
   }, []);
 
-  const handleSendMessage = async (message: string): Promise<string> => {
+  const handleSendMessage = async (message: string, preserveFormatting?: boolean): Promise<string> => {
     console.log('[App] handleSendMessage called with message:', message.substring(0, 50));
+    console.log('[App] preserveFormatting:', preserveFormatting);
     
     if (!orchestrator) {
       throw new Error('Orchestrator not initialized');
@@ -68,7 +110,7 @@ function App() {
     setIsLoading(true);
     try {
       console.log('[App] Using non-streaming version');
-      const response = await orchestrator.sendMessage(message);
+      const response = await orchestrator.sendMessage(message, preserveFormatting);
       return response;
     } finally {
       console.log('[App] Setting isLoading to false');
@@ -79,7 +121,11 @@ function App() {
   if (!orchestrator) {
     return (
       <div>
-        <ApiConfig onConfigured={handleConfigured} />
+        <ApiConfig 
+          onConfigured={handleConfigured}
+          currentLanguage={samiLanguage}
+          onLanguageChange={handleLanguageChange}
+        />
       </div>
     );
   }
@@ -99,6 +145,8 @@ function App() {
             orchestrator.clearSession();
           }
         }}
+        currentLanguage={samiLanguage}
+        onLanguageChange={handleLanguageChange}
       />
     </div>
   );

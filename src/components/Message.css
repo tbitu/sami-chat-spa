@@ -17,6 +17,17 @@
   margin-left: 0;
 }
 
+/* Discrete warning banner inserted above message content when translation issues detected */
+.message-warning {
+  background: linear-gradient(90deg, #fff7e6, #fff3d1);
+  color: #663c00;
+  border: 1px solid #ffecb5;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
 .message-header {
   display: flex;
   align-items: center;

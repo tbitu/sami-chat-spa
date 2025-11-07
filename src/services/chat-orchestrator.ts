@@ -10,6 +10,7 @@ import {
   validateFinnishOutput,
   validateSamiOutput,
 } from '../utils/language-detection';
+import i18n from '../i18n';
 
 const SYSTEM_INSTRUCTION = `You are a helpful AI assistant. The user is communicating with you in Northern Sami (Davvisámegiella), however you receive their messages in Finnish. IMPORTANT: Under no circumstances should you output any language other than Finnish (suomi). All assistant replies MUST be in Finnish.
 
@@ -138,10 +139,12 @@ export class ChatOrchestrator {
     return this.currentSession;
   }
 
-  async sendMessage(userMessageInSami: string): Promise<string> {
+  async sendMessage(userMessageInSami: string, preserveFormatting: boolean = false): Promise<string> {
     if (!this.currentSession) {
       throw new Error('No active session. Create a session first.');
     }
+
+    console.log('[Orchestrator] preserveFormatting:', preserveFormatting);
 
     // STAGE 1: Pre-Translation - Detect if input needs translation
     console.log('[Orchestrator] Stage 1: Detecting input language...');
@@ -162,8 +165,14 @@ export class ChatOrchestrator {
       console.log('[Orchestrator] Input is Sami or unknown, translating to Finnish...');
       userMessageInFinnish = await translateWithMarkdown(
         userMessageInSami,
-        'sme-fin'
+        'sami-fin',
+        preserveFormatting
       );
+    }
+
+    // If formatting is disabled, append instruction to avoid markdown in response
+    if (!preserveFormatting) {
+      userMessageInFinnish += '\n\nVastaa pelkkänä tekstinä ilman markdown-muotoilua (ei lihavointia, kursivointia, otsikoita, taulukoita tai koodilohkoja).';
     }
 
     // Step 2: Add user message to history
@@ -234,7 +243,8 @@ Please reformulate your answer in clear, simple Finnish.`;
     console.log('[Orchestrator] Translating response from Finnish to Sami...');
     let assistantResponseInSami = await translateWithMarkdown(
       assistantResponseInFinnish,
-      'fin-sme'
+      'fin-sami',
+      preserveFormatting
     );
 
     // STAGE 3: Post-Translation - Validate Sami output quality
@@ -287,7 +297,7 @@ Provide the complete rewritten response in Finnish:`;
       saveSessionToStorage(this.currentSession);
       
       // Re-translate
-      assistantResponseInSami = await translateWithMarkdown(rephrasedFinnish, 'fin-sme');
+      assistantResponseInSami = await translateWithMarkdown(rephrasedFinnish, 'fin-sami', preserveFormatting);
       
       // Re-validate
       samiValidation = validateSamiOutput(assistantResponseInSami);
@@ -295,7 +305,37 @@ Provide the complete rewritten response in Finnish:`;
     
     if (!samiValidation.isValid) {
       console.error('[Orchestrator] Sami output still invalid after retries:', samiValidation.errors);
-      throw new Error(`Translation quality issue: ${samiValidation.errors.join(', ')}`);
+
+      // Graceful fallback: instead of throwing an error which surfaces to the UI,
+      // return the original Finnish assistant response together with a visible
+      // warning. We attempt to translate the warning into Sami; if that fails,
+      // we fall back to the Finnish warning. This ensures the user receives
+      // meaningful content instead of an error page.
+
+      // Localize the warning with i18n, passing the error details. The locale string
+      // includes a placeholder {{errors}} which we fill with a semicolon-joined list.
+      const localized = i18n.t('errors.fallbackWarning', { errors: samiValidation.errors.join('; ') });
+
+      // Try to obtain a Sami rendering of the localized warning by translating the localized
+      // string (which may be in the current UI language) to Sami. If that fails, fall back to localized.
+      let warningToShow = localized as string;
+      try {
+        const translatedWarning = await translateWithMarkdown(localized as string, 'fin-sami', preserveFormatting);
+        if (translatedWarning && translatedWarning.trim().length > 0) {
+          warningToShow = translatedWarning;
+        }
+      } catch (err) {
+        console.warn('[Orchestrator] Warning translation failed, using localized warning:', err);
+      }
+
+      // Compose final response with a stable marker so the UI can render a discrete banner.
+      const WARNING_START = '@@WARNING_START@@';
+      const WARNING_END = '@@WARNING_END@@';
+      const fallbackResponse = `${WARNING_START}${warningToShow}${WARNING_END}\n\n${assistantResponseInSami}`;
+
+  // Log the fallback and return it to the caller instead of throwing
+  console.warn('[Orchestrator] Returning fallback response (translated Sami text + warning)');
+  return fallbackResponse;
     }
     
     // Log warnings if any

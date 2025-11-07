@@ -23,7 +23,7 @@ const PUBLIC_TARTUNLP_API = 'https://api.tartunlp.ai/translation/v2';
 const MAX_RETRIES = 3; // Retry up to 3 times for transient errors
 const CLIENT_TIMEOUT_MS = 25000; // Abort fetch after 25s on the client side
 
-export type TranslationDirection = 'sme-fin' | 'fin-sme';
+export type TranslationDirection = 'sami-fin' | 'fin-sami';
 
 interface TartuNLPRequest {
   text: string;
@@ -44,6 +44,16 @@ export function configureTranslationService(config: TranslationConfig): void {
 }
 
 /**
+ * Update the Sami language for translation without changing other config
+ */
+export function updateSamiLanguage(language: string): void {
+  if (translationConfig) {
+    translationConfig.samiLanguage = language as any;
+    console.log('[Translation] Sami language updated to:', language);
+  }
+}
+
+/**
  * Get the current API URL based on configuration
  */
 function getApiUrl(): string {
@@ -55,6 +65,22 @@ function getApiUrl(): string {
     return PUBLIC_TARTUNLP_API;
   }
   return translationConfig.apiUrl || 'http://localhost:8000/translation/v2';
+}
+
+function getApplicationName(): string | undefined {
+  if (!translationConfig) return undefined;
+  // Default application name for public API if not explicitly provided
+  if (translationConfig.application) return translationConfig.application;
+  if (translationConfig.service === 'tartunlp-public') return 'sami-ai-lab-chat';
+  return undefined;
+}
+
+/**
+ * Get the current Sami language code from configuration
+ */
+function getSamiLanguage(): string {
+  if (!translationConfig) return 'sme'; // Default fallback
+  return translationConfig.samiLanguage || 'sme';
 }
 
 /**
@@ -69,7 +95,9 @@ async function translateText(
     throw new Error('Translation service not configured. Please select a translation service in the API configuration screen.');
   }
   
-  const [src, tgt] = direction.split('-');
+  // Map direction to actual language codes
+  const samiLang = getSamiLanguage();
+  const [src, tgt] = direction === 'sami-fin' ? [samiLang, 'fin'] : ['fin', samiLang];
   const apiUrl = getApiUrl();
 
   console.log(`[Translation] Attempting translation (${text.length} chars): ${src} -> ${tgt} via ${translationConfig.service}`);
@@ -85,16 +113,23 @@ async function translateText(
 
   try {
     // Using configured translation service
+    const appName = getApplicationName();
+    const bodyPayload: any = {
+      text,
+      src,
+      tgt,
+    };
+    if (translationConfig.domain) bodyPayload.domain = translationConfig.domain;
+    if (appName) bodyPayload.application = appName;
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    // Note: header 'application' is deprecated in v2; prefer body.application
+    // We'll avoid sending the deprecated header and use the body field instead.
+
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text,
-        src,
-        tgt,
-      } as TartuNLPRequest),
+      headers,
+      body: JSON.stringify(bodyPayload as TartuNLPRequest),
       signal: controller?.signal,
     });
 
@@ -192,7 +227,7 @@ async function translateText(
  * Returns true if the translation should be retried.
  */
 function isCorruptedTranslation(translated: string, original: string, direction: TranslationDirection): boolean {
-  if (direction === 'fin-sme') {
+  if (direction === 'fin-sami') {
     // Pattern: Short headers ending with ":" that get corrupted due to context bleeding
     // Corruption signs: starts with closing brackets/parens followed by lowercase text
     // Example: "Ohje:" -> ") help." instead of proper Sami translation
@@ -221,10 +256,17 @@ function isCorruptedTranslation(translated: string, original: string, direction:
  */
 export async function translateWithMarkdown(
   text: string,
-  direction: TranslationDirection
+  direction: TranslationDirection,
+  preserveFormatting: boolean = false
 ): Promise<string> {
   if (!text.trim()) {
     return text;
+  }
+
+  // If preserveFormatting is false, skip all segmentation and markdown handling
+  // Just translate the entire text as one chunk (LLM is instructed not to use markdown)
+  if (!preserveFormatting) {
+    return translateText(text, direction);
   }
 
   // Check if text contains markdown
@@ -257,13 +299,14 @@ export async function translateWithMarkdown(
     // Alternative separators like \n---\n get interpreted as content by the LLM.
     const SEP = '|';
     const batchText = segUnits.map(u => u.text).join(SEP);
+    
     try {
   // Only log Finnish texts per user's preference:
-  // - When direction === 'fin-sme', the batchText here is Finnish (segment from LLM reply).
+  // - When direction === 'fin-sami', the batchText here is Finnish (segment from LLM reply).
   //   Log it before translation but do not log translated result.
-  // - When direction === 'sme-fin', the translatedBatch will be Finnish
+  // - When direction === 'sami-fin', the translatedBatch will be Finnish
   //   (what will be sent to the LLM); log that after translation.
-      if (direction === 'fin-sme') {
+      if (direction === 'fin-sami') {
         try {
           console.log('[Translation] Finnish segment to translate:', {
             segmentIndex,
@@ -278,7 +321,7 @@ export async function translateWithMarkdown(
 
       const translatedBatch = await translateText(batchText, direction);
 
-      if (direction === 'sme-fin') {
+      if (direction === 'sami-fin') {
         try {
           console.log('[Translation] Finnish sent to LLM:', {
             items: segUnits.length,

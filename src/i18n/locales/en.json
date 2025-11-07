@@ -27,7 +27,8 @@
     },
     "streaming": "Receiving response...",
     "inputPlaceholder": "Type your message here...",
-    "send": "Send"
+    "send": "Send",
+    "preserveFormatting": "Preserve formatting"
   },
   "message": {
     "user": "You",
@@ -37,6 +38,7 @@
   },
   "errors": {
     "translationQuality": "Translation quality issue detected. Please try rephrasing your question.",
+    "fallbackWarning": "Warning: translation issues detected: {{errors}}. The translated content below may be unreliable.",
     "languageDetection": "Could not detect language. Please try writing in Northern Sami.",
     "llmLanguage": "AI responded in wrong language. Retrying...",
     "invalidCharacters": "Translation contains invalid characters. Retrying...",
@@ -45,6 +47,7 @@
   },
   "menu": {
     "resetPersistence": "Reset persistence",
-    "salke": "Sálke"
+    "salke": "New conversation",
+    "modelSelectorTitle": "Model"
   }
 }

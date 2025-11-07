@@ -2,18 +2,30 @@
 import React, { useEffect, useState } from 'react';
 import { GeminiService, GeminiModel } from '../services/gemini';
 import { useTranslation } from 'react-i18next';
-import { TranslationService } from '../types/chat';
+import { TranslationService, SamiLanguage } from '../types/chat';
+import { LanguageSelector } from './LanguageSelector';
 import './ApiConfig.css';
+import './menu.css';
 
 interface ApiConfigProps {
   onConfigured: (geminiKey: string, openaiKey: string, translationService: TranslationService, geminiModel?: string) => void;
+  currentLanguage: SamiLanguage;
+  onLanguageChange: (language: SamiLanguage) => void;
 }
 
-export const ApiConfig: React.FC<ApiConfigProps> = ({ onConfigured }) => {
+export const ApiConfig: React.FC<ApiConfigProps> = ({ onConfigured, currentLanguage, onLanguageChange }) => {
   const { t } = useTranslation();
   const [geminiKey, setGeminiKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [preserveFormatting, setPreserveFormatting] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('sami_chat_preserve_formatting');
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
   // Default to TartuNLP public API (preferred selection on first screen)
   const [translationService, setTranslationService] = useState<TranslationService>('tartunlp-public');
   const [error, setError] = useState('');
@@ -119,6 +131,21 @@ export const ApiConfig: React.FC<ApiConfigProps> = ({ onConfigured }) => {
     }
   }, []);
 
+  // Listen for preserveFormatting changes from other components
+  useEffect(() => {
+    const handler = (ev: Event) => {
+      try {
+        // @ts-ignore - CustomEvent
+        const val = (ev as CustomEvent).detail?.value;
+        if (typeof val === 'boolean') setPreserveFormatting(val);
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('sami_preserve_formatting_changed', handler as EventListener);
+    return () => window.removeEventListener('sami_preserve_formatting_changed', handler as EventListener);
+  }, []);
+
   const clearPersistence = () => {
     try {
       if (typeof window !== 'undefined') {
@@ -169,32 +196,39 @@ export const ApiConfig: React.FC<ApiConfigProps> = ({ onConfigured }) => {
             <p className="description">{t('apiConfig.description')}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div className="hc-menu" style={{ display: 'inline-block', marginLeft: 8 }}>
-              <button
-                aria-label="menu"
-                onClick={() => setMenuOpen(!menuOpen)}
-                className="hc-menu-button"
-              >
-                ☰
-              </button>
+            {/* Language selector for Sami languages */}
+            <LanguageSelector
+              currentLanguage={currentLanguage}
+              onLanguageChange={onLanguageChange}
+            />
+            <div className="hc-menu" style={{ marginLeft: 8 }}>
+              <button aria-label="menu" onClick={() => setMenuOpen(!menuOpen)} className="hc-menu-button">☰</button>
               {menuOpen && (
                 <div className="hc-menu-dropdown">
-                  <button
-                    onClick={() => {
-                      // Sálke: reload the page to simulate logout / close session
-                      setTimeout(() => window.location.reload(), 50);
-                    }}
-                  >
-                    {t('menu.salke')}
-                  </button>
-                  <button
-                    onClick={() => {
-                      clearPersistence();
-                      window.location.reload();
-                    }}
-                  >
-                    {t('menu.resetPersistence')}
-                  </button>
+                  <div className="hc-menu-section hc-menu-actions">
+                    <button onClick={() => { setTimeout(() => window.location.reload(), 50); }}>{t('menu.salke')}</button>
+                    <button onClick={() => { clearPersistence(); window.location.reload(); }}>{t('menu.resetPersistence')}</button>
+                  </div>
+
+                  <div className="hc-menu-section hc-menu-section--separator">
+                    <label>
+                      <input type="checkbox" checked={preserveFormatting} onChange={(e) => { const newValue = e.target.checked; setPreserveFormatting(newValue); try { localStorage.setItem('sami_chat_preserve_formatting', String(newValue)); window.dispatchEvent(new CustomEvent('sami_preserve_formatting_changed', { detail: { value: newValue } })); } catch {} }} />
+                      <span style={{ marginLeft: 8 }}>{t('chatInterface.preserveFormatting')}</span>
+                    </label>
+                  </div>
+
+                  <div className="hc-menu-section hc-menu-section--separator">
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('menu.modelSelectorTitle') || 'Model'}</div>
+                    {availableModels.length > 0 ? (
+                      <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="api-input">
+                        {availableModels.map((model) => (
+                          <option key={model.name} value={model.name.replace('models/', '')}>{model.displayName}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div style={{ color: '#666' }}>(default)</div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { GeminiService, GeminiModel } from '../services/gemini';
 import './ApiConfig.css';
+import './controls.css';
 
 interface ModelSelectorProps {
   onModelChange?: (model?: string) => void;
@@ -15,20 +16,19 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ onModelChange }) =
     try {
       const stored = localStorage.getItem('sami_chat_gemini_model');
       if (stored) setSelectedModel(stored);
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, []);
 
   useEffect(() => {
-    // Persist selection
     try {
       if (selectedModel) {
         localStorage.setItem('sami_chat_gemini_model', selectedModel);
       } else {
         localStorage.removeItem('sami_chat_gemini_model');
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
 
@@ -39,7 +39,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ onModelChange }) =
     const key = (() => {
       try {
         return localStorage.getItem('sami_chat_gemini_key') || '';
-      } catch (e) {
+      } catch {
         return '';
       }
     })();
@@ -48,11 +48,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ onModelChange }) =
 
     setIsLoading(true);
     const svc = new GeminiService(key);
-    svc.listAvailableModels()
-      .then((m) => {
-        setAvailableModels(m);
-        if (m.length > 0 && !selectedModel) {
-          const first = m[0].name.replace('models/', '');
+    svc
+      .listAvailableModels()
+      .then((models) => {
+        setAvailableModels(models);
+        if (models.length > 0 && !selectedModel) {
+          const first = models[0].name.replace('models/', '');
           setSelectedModel(first);
         }
       })
@@ -61,23 +62,27 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ onModelChange }) =
   }, [selectedModel]);
 
   return (
-    <div style={{ display: 'inline-block', marginLeft: 12 }}>
-      <label htmlFor="header-gemini-model" style={{ position: 'absolute', left: '-9999px' }}>Gemini model</label>
+    <div className="control-inline ml-12">
+      <label htmlFor="header-gemini-model" className="control-hidden-label">Gemini model</label>
       <select
         id="header-gemini-model"
         value={selectedModel}
         onChange={(e) => setSelectedModel(e.target.value)}
-        className="api-input"
-        style={{ minWidth: 180 }}
+        className="api-input control-minwidth"
       >
-        {availableModels.length === 0 && <option value="">(default)</option>}
-        {availableModels.map((model) => (
-          <option key={model.name} value={model.name.replace('models/', '')}>
-            {model.displayName}
-          </option>
-        ))}
+        {availableModels.length === 0 ? (
+          <option value="">(default)</option>
+        ) : (
+          availableModels.map((model) => (
+            <option key={model.name} value={model.name.replace('models/', '')}>
+              {model.displayName}
+            </option>
+          ))
+        )}
       </select>
-      {isLoading && <small style={{ marginLeft: 8 }}>Loading…</small>}
+      {isLoading && <small className="control-loading-small">Loading…</small>}
     </div>
   );
 };
+
+export default ModelSelector;

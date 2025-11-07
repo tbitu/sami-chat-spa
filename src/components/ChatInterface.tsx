@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Message } from './Message';
 import './ChatInterface.css';
 import { useTranslation } from 'react-i18next';
+import type { SamiLanguage } from '../types/chat';
 
 interface DisplayMessage {
   id: string;
@@ -12,13 +13,17 @@ interface DisplayMessage {
 }
 
 interface ChatInterfaceProps {
-  onSendMessage: (message: string) => Promise<string>;
+  onSendMessage: (message: string, preserveFormatting?: boolean) => Promise<string>;
   isLoading: boolean;
   onModelChange?: (model?: string) => void;
   onClearSession?: () => void;
+  currentLanguage: SamiLanguage;
+  onLanguageChange: (language: SamiLanguage) => void;
 }
 import { ModelSelector } from './ModelSelector';
+import { LanguageSelector } from './LanguageSelector';
 import { sanitizePlaceholders } from '../utils/markdown';
+import './menu.css';
 
 const DISPLAY_MESSAGES_STORAGE_KEY = 'sami_chat_display_messages';
 
@@ -68,6 +73,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   isLoading,
   onModelChange,
   onClearSession,
+  currentLanguage,
+  onLanguageChange,
 }) => {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
@@ -76,6 +83,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     return loadDisplayMessages();
   });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [preserveFormatting, setPreserveFormatting] = useState<boolean>(() => {
+    // Load preserve formatting preference from localStorage
+    try {
+      const saved = localStorage.getItem('sami_chat_preserve_formatting');
+      // Default to true if not set (enable markdown preservation by default)
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -110,6 +127,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     inputRef.current?.focus();
   }, []);
 
+  // Keep preserveFormatting in sync if changed from other overlays
+  useEffect(() => {
+    const handler = (ev: Event) => {
+      try {
+        // @ts-ignore - CustomEvent
+        const val = (ev as CustomEvent).detail?.value;
+        if (typeof val === 'boolean') setPreserveFormatting(val);
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('sami_preserve_formatting_changed', handler as EventListener);
+    return () => window.removeEventListener('sami_preserve_formatting_changed', handler as EventListener);
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('[ChatInterface] Form submitted, input:', input);
@@ -132,10 +164,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   // keep focus in the input after sending
   inputRef.current?.focus();
 
-    console.log('[ChatInterface] Calling onSendMessage');
+    console.log('[ChatInterface] Calling onSendMessage with preserveFormatting:', preserveFormatting);
     
     try {
-      const response = await onSendMessage(messageToSend);
+      const response = await onSendMessage(messageToSend, preserveFormatting);
       
       console.log('[ChatInterface] onSendMessage completed');
       
@@ -167,11 +199,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       <div className="chat-header">
         <h1>{t('chatInterface.title')}</h1>
         <div className="header-controls">
-          {/* Model selector moved into header for quick switching */}
-          <ModelSelector onModelChange={onModelChange} />
+          {/* Language selector for Sami languages */}
+          <LanguageSelector
+            currentLanguage={currentLanguage}
+            onLanguageChange={onLanguageChange}
+          />
+          {/* Model selector moved into hamburger menu as a submenu */}
+          {/* Formatting toggle moved into hamburger menu (preserveFormatting state still lives here) */}
           {/* Hamburger menu (language selection removed) */}
           <div style={{ position: 'relative' }} aria-hidden={false}>
-            <div className="hc-menu" style={{ display: 'inline-block', marginLeft: 8 }}>
+            <div className="hc-menu" style={{ marginLeft: 8 }}>
               <button
                 aria-label="menu"
                 onClick={() => setMenuOpen(!menuOpen)}
@@ -181,30 +218,22 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               </button>
               {menuOpen && (
                 <div className="hc-menu-dropdown">
-                  <button
-                    onClick={() => {
-                      // Clear the chat session and display messages
-                      clearDisplayMessages();
-                      setMessages([]);
-                      setMenuOpen(false);
-                      // Clear the orchestrator session
-                      if (onClearSession) {
-                        onClearSession();
-                      }
-                      // Reload to reset the UI completely
-                      setTimeout(() => window.location.reload(), 50);
-                    }}
-                  >
-                    {t('menu.salke')}
-                  </button>
-                  <button
-                    onClick={() => {
-                      clearPersistence();
-                      window.location.reload();
-                    }}
-                  >
-                    {t('menu.resetPersistence')}
-                  </button>
+                  <div className="hc-menu-section hc-menu-actions">
+                    <button onClick={() => { clearDisplayMessages(); setMessages([]); setMenuOpen(false); if (onClearSession) onClearSession(); setTimeout(() => window.location.reload(), 50); }}>{t('menu.salke')}</button>
+                    <button onClick={() => { clearPersistence(); window.location.reload(); }}>{t('menu.resetPersistence')}</button>
+                  </div>
+
+                  <div className="hc-menu-section hc-menu-section--separator">
+                    <label>
+                      <input type="checkbox" checked={preserveFormatting} onChange={(e) => { const newValue = e.target.checked; setPreserveFormatting(newValue); try { localStorage.setItem('sami_chat_preserve_formatting', String(newValue)); window.dispatchEvent(new CustomEvent('sami_preserve_formatting_changed', { detail: { value: newValue } })); } catch {} }} />
+                      <span style={{ marginLeft: 8 }}>{t('chatInterface.preserveFormatting')}</span>
+                    </label>
+                  </div>
+
+                  <div className="hc-menu-section hc-menu-section--separator">
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('menu.modelSelectorTitle') || 'Model'}</div>
+                    <ModelSelector onModelChange={onModelChange} />
+                  </div>
                 </div>
               )}
             </div>
