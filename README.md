@@ -5,7 +5,7 @@ Chat with AI assistants (Google Gemini and OpenAI ChatGPT) in **all five Sami la
 ## Features
 
 - 🌐 **Multi-language support**: Northern (sme), Lule (smj), Southern (sma), Inari (smn), and Skolt (sms) Sami
-- 🤖 **Dual AI providers**: Google Gemini (default: gemini-2.5-flash-latest) and OpenAI ChatGPT
+- 🤖 **Dual AI providers**: Google Gemini (default: gemini-flash-latest) and OpenAI ChatGPT
 - 📝 **Smart markdown preservation**: Code blocks, tables, and formatting preserved during translation
 - 🔍 **3-stage language validation**: Ensures quality at input, LLM output, and translation stages
 - 🔒 **Privacy-first**: API keys stored locally in browser only; supports local translation backend
@@ -112,7 +112,7 @@ src/
 
 - **Frontend**: React 18, TypeScript, Vite
 - **Translation**: TartuNLP OPUS-MT models for Uralic languages (sme, smj, sma, smn, sms ↔ fin)
-- **AI**: Google Gemini API (gemini-2.5-flash-latest), OpenAI ChatGPT API
+- **AI**: Google Gemini API (gemini-flash-latest), OpenAI ChatGPT API
 - **Markdown**: Marked + DOMPurify for safe rendering
 - **i18n**: i18next + react-i18next for multilingual UI
 - **Testing**: Vitest for unit tests

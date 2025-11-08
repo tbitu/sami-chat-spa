@@ -1,9 +1,9 @@
 // Gemini API Service
 import { AIService, Message } from '../types/chat';
 
-// Use 'latest' suffix to always get the most recent stable version
-// Alternative models: gemini-2.5-pro-latest (higher quality, slower)
-const DEFAULT_MODEL = 'gemini-2.5-flash-latest';
+// Use the family-level 'latest' alias to always get the most recent flash variant
+// Alternative models: gemini-pro-latest (higher quality, slower)
+const DEFAULT_MODEL = 'gemini-flash-latest';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export interface GeminiModel {
@@ -177,7 +177,7 @@ export class GeminiService implements AIService {
         throw new Error('Unauthorized. Please verify your Gemini API key.');
       }
       if (response.status === 404) {
-        throw new Error('Model not found. The API has been updated to use gemini-1.5-flash.');
+        throw new Error('Model not found. The API has been updated to use gemini-flash-latest.');
       }
       if (response.status === 429) {
         throw new Error('Rate limit exceeded. Please wait a moment and try again.');

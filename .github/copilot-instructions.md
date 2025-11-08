@@ -12,7 +12,7 @@ User (Sami) → translate sme→fin → AI provider (Finnish) → translate fin�
 **Key Components**:
 - **Frontend**: React 18 + TypeScript SPA built with Vite (entry: `src/main.tsx`)
 - **Orchestration**: `ChatOrchestrator` in `src/services/chat-orchestrator.ts` coordinates language detection → translation → AI call → translation → validation
-- **AI Providers**: `gemini.ts` (default: gemini-2.5-flash-latest) and `chatgpt.ts` implement `AIService` interface from `src/types/chat.ts`
+- **AI Providers**: `gemini.ts` (default: gemini-flash-latest) and `chatgpt.ts` implement `AIService` interface from `src/types/chat.ts`
 - **Translation**: `src/services/translation.ts` wraps TartuNLP backend (default: `http://localhost:8000/translation/v2`); supports multiple Sami languages (sme, smj, sma, smn, sms)
 - **Markdown Preservation**: `src/utils/markdown.ts` extracts/restores structure during translation using placeholder-free token-based segmentation
 - **Language Detection**: `src/utils/language-detection.ts` validates language at 3 stages: pre-translation (Stage 1), post-LLM (Stage 2), post-translation (Stage 3)

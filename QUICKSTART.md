@@ -35,7 +35,7 @@ Choose **one** of these:
 
 - **Select language**: Choose your Sami language from dropdown (Northern, Lule, Southern, Inari, or Skolt)
 - **Send messages**: Type in Sami, press "Sádde" or Enter
-- **Switch AI**: Use dropdown to change between Gemini (gemini-2.5-flash-latest) and ChatGPT
+- **Switch AI**: Use dropdown to change between Gemini (gemini-flash-latest) and ChatGPT
 - **Toggle formatting**: Check "Bisuhit hámidivvon" to preserve markdown (code blocks, tables, etc.)
 - **Clear chat**: Click "Ođđa ságastallan" to reset conversation
 - **Change UI language**: Select from menu (Sami languages, Norwegian, English)
