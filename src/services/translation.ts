@@ -16,6 +16,33 @@ import type { TranslationConfig } from '../types/chat.ts';
 // No default service is set to ensure the user explicitly chooses
 let translationConfig: TranslationConfig | null = null;
 
+function getEnvTranslationApiUrl(): string | undefined {
+  try {
+    // Vite exposes env vars via import.meta.env at build/runtime in the browser
+    const metaEnv = (typeof import.meta !== 'undefined' && (import.meta as any).env) ? (import.meta as any).env : undefined;
+    const fromImportMeta = metaEnv?.VITE_TRANSLATION_API_URL;
+    if (typeof fromImportMeta === 'string' && fromImportMeta.trim()) {
+      return fromImportMeta.trim();
+    }
+  } catch {
+    // ignore access issues
+  }
+
+  try {
+    // Allow Node-based scripts (ts-node) to pick up the same variable when bundled differently
+    const globalProcess = typeof globalThis !== 'undefined' ? (globalThis as any).process : undefined;
+    const nodeEnv = globalProcess?.env;
+    const fromProcess = nodeEnv?.VITE_TRANSLATION_API_URL;
+    if (typeof fromProcess === 'string' && fromProcess.trim()) {
+      return fromProcess.trim();
+    }
+  } catch {
+    // ignore when process is unavailable
+  }
+
+  return undefined;
+}
+
 // Public TartuNLP API
 const PUBLIC_TARTUNLP_API = 'https://api.tartunlp.ai/translation/v2';
 
@@ -39,8 +66,12 @@ interface TartuNLPResponse {
  * Configure the translation service
  */
 export function configureTranslationService(config: TranslationConfig): void {
-  translationConfig = config;
-  console.log('[Translation] Service configured:', config);
+  const envApiUrl = getEnvTranslationApiUrl();
+  translationConfig = {
+    ...config,
+    apiUrl: config.apiUrl ?? envApiUrl,
+  };
+  console.log('[Translation] Service configured:', translationConfig);
 }
 
 /**
@@ -60,19 +91,23 @@ function getApiUrl(): string {
   if (!translationConfig) {
     throw new Error('Translation service not configured. Please select a translation service in the API configuration screen.');
   }
-  
+
+  const envOverride = translationConfig.apiUrl || getEnvTranslationApiUrl();
+  if (envOverride) {
+    return envOverride;
+  }
+
   if (translationConfig.service === 'tartunlp-public') {
     return PUBLIC_TARTUNLP_API;
   }
-  return translationConfig.apiUrl || 'http://localhost:8000/translation/v2';
+  return 'http://localhost:8000/translation/v2';
 }
 
 function getApplicationName(): string | undefined {
   if (!translationConfig) return undefined;
-  // Default application name for public API if not explicitly provided
   if (translationConfig.application) return translationConfig.application;
-  if (translationConfig.service === 'tartunlp-public') return 'sami-ai-lab-chat';
-  return undefined;
+  // Local backend now mirrors the public API, so use the shared default identifier
+  return 'sami-ai-lab-chat';
 }
 
 /**
@@ -100,7 +135,7 @@ async function translateText(
   const [src, tgt] = direction === 'sami-fin' ? [samiLang, 'fin'] : ['fin', samiLang];
   const apiUrl = getApiUrl();
 
-  console.log(`[Translation] Attempting translation (${text.length} chars): ${src} -> ${tgt} via ${translationConfig.service}`);
+  console.log(`[Translation] Attempting translation (${text.length} chars): ${src} -> ${tgt} via ${translationConfig.service} (${apiUrl})`);
   console.log(`[Translation] Text to translate:`, text);
 
   // Use AbortController to enforce a client-side timeout so requests don't hang
@@ -122,9 +157,14 @@ async function translateText(
     if (translationConfig.domain) bodyPayload.domain = translationConfig.domain;
     if (appName) bodyPayload.application = appName;
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    // Note: header 'application' is deprecated in v2; prefer body.application
-    // We'll avoid sending the deprecated header and use the body field instead.
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    if (appName) {
+      // Some deployments still require the legacy header, so send both body + header when available
+      headers.application = appName;
+    }
 
     const response = await fetch(apiUrl, {
       method: 'POST',
