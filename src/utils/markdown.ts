@@ -10,12 +10,13 @@ export interface MarkdownSegment {
   suffix?: string;
 }
 
-interface InlineMarkdown {
+export interface InlineMarkdown {
   type: 'inline-code' | 'bold' | 'italic' | 'link';
   placeholder: string;
   original: string;
   linkText?: string; // For links, the text to translate
   linkUrl?: string;  // For links, the URL to preserve
+  trailingPunctuation?: string; // Punctuation directly following the inline element in the original text
 }
 
 // Token produced from tokenization of a segment
@@ -98,12 +99,15 @@ function extractInlineMarkdown(text: string): { text: string; inlineElements: In
       result += text.slice(cursor, mm.start);
     }
     const placeholder = `@@${(mm.type).toUpperCase()}_${placeholderIndex}@@`;
+    const nextChar = text[mm.end] ?? '';
+    const trailingPunctuation = nextChar && !/\s/.test(nextChar) && /[.,;:!?)}\]}'"]/.test(nextChar) ? nextChar : undefined;
     inlineElements.push({
       type: mm.type,
       placeholder,
       original: mm.original,
       linkText: mm.groups && mm.groups[0],
       linkUrl: mm.groups && mm.groups[1],
+      trailingPunctuation,
     });
     result += placeholder;
     placeholderIndex++;
@@ -126,12 +130,86 @@ let globalPlaceholderCounter = 0;
  * Restore inline markdown elements back into translated text
  * For links, translate the link text if it appears in the translated content
  */
-function restoreInlineMarkdown(text: string, inlineElements: InlineMarkdown[]): string {
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function deriveWrappers(element: InlineMarkdown): { wrapperStart?: string; wrapperEnd?: string } {
+  if (element.type === 'bold') {
+    const match = element.original.match(/^(\*\*|__)([\s\S]+?)(\*\*|__)$/);
+    if (match) {
+      return { wrapperStart: match[1], wrapperEnd: match[3] };
+    }
+  } else if (element.type === 'italic') {
+    const match = element.original.match(/^(\*|_)([\s\S]+?)(\*|_)$/);
+    if (match) {
+      return { wrapperStart: match[1], wrapperEnd: match[3] };
+    }
+  } else if (element.type === 'inline-code') {
+    const match = element.original.match(/^(`+)([\s\S]+?)(`+)$/);
+    if (match) {
+      return { wrapperStart: match[1], wrapperEnd: match[3] };
+    }
+  }
+
+  return {};
+}
+
+function normalizePlaceholderContext(text: string, element: InlineMarkdown): string {
+  const placeholder = element.placeholder;
+  const placeholderPattern = escapeRegExp(placeholder);
+  let result = text;
+
+  if (element.type === 'link') {
+    // Collapse bracketed/parenthesized placeholders back to the raw placeholder
+    const linkPattern = new RegExp(`\\[\\s*${placeholderPattern}\\s*\\]\\s*\\(([^)]+)\\)`, 'g');
+    result = result.replace(linkPattern, placeholder);
+
+    const bracketOnlyPattern = new RegExp(`\\[\\s*${placeholderPattern}\\s*\\]`, 'g');
+    result = result.replace(bracketOnlyPattern, placeholder);
+
+    const parenOnlyPattern = new RegExp(`\\(\\s*${placeholderPattern}\\s*\\)`, 'g');
+    result = result.replace(parenOnlyPattern, placeholder);
+  } else {
+    const { wrapperStart, wrapperEnd } = deriveWrappers(element);
+    if (wrapperStart && wrapperEnd) {
+      const bothPattern = new RegExp(`${escapeRegExp(wrapperStart)}\\s*${placeholderPattern}\\s*${escapeRegExp(wrapperEnd)}`, 'g');
+      result = result.replace(bothPattern, placeholder);
+    }
+    if (wrapperStart) {
+      const startPattern = new RegExp(`${escapeRegExp(wrapperStart)}\\s*${placeholderPattern}`, 'g');
+      result = result.replace(startPattern, placeholder);
+    }
+    if (wrapperEnd) {
+      const endPattern = new RegExp(`${placeholderPattern}\\s*${escapeRegExp(wrapperEnd)}`, 'g');
+      result = result.replace(endPattern, placeholder);
+    }
+  }
+
+  if (element.trailingPunctuation) {
+    const escapedPunctuation = escapeRegExp(element.trailingPunctuation);
+    const trailingPunctPattern = new RegExp(placeholderPattern + '\\s+' + escapedPunctuation, 'g');
+    result = result.replace(trailingPunctPattern, `${placeholder}${element.trailingPunctuation}`);
+  }
+
+  return result;
+}
+
+function normalizeBulletSpacing(text: string): string {
+  if (!text || text.indexOf('•') === -1) {
+    return text;
+  }
+
+  const withLineBreaks = text.replace(/([^\n])\s*•\s*/g, (_match, prev) => `${prev}\n• `);
+  return withLineBreaks.replace(/(^|\n)[ \t]*•[ \t]*/g, (_match, prefix) => `${prefix}• `);
+}
+
+export function restoreInlineMarkdown(text: string, inlineElements: InlineMarkdown[]): string {
   let result = text;
 
   for (const element of inlineElements) {
-    // Exact replacement only (placeholders should not be sent to translator anymore)
-    if (result.indexOf(element.placeholder) !== -1) {
+    if (result.includes(element.placeholder)) {
+      result = normalizePlaceholderContext(result, element);
       result = result.split(element.placeholder).join(element.original);
     }
   }
@@ -520,13 +598,16 @@ export function reconstructSegmentsFromUnits(segments: MarkdownSegment[], transl
               return originalLeadingSpace + trimmedTranslated + originalTrailingSpace;
             }
             case 'bold': {
-              return `${t.wrapperStart || '**'}${translated}${t.wrapperEnd || '**'}`;
+              const normalized = translated.trim();
+              return `${t.wrapperStart || '**'}${normalized}${t.wrapperEnd || '**'}`;
             }
             case 'italic': {
-              return `${t.wrapperStart || '_'}${translated}${t.wrapperEnd || '_'}`;
+              const normalized = translated.trim();
+              return `${t.wrapperStart || '_'}${normalized}${t.wrapperEnd || '_'}`;
             }
             case 'link': {
-              return `[${translated}](${t.url || ''})`;
+              const normalized = translated.trim();
+              return `[${normalized}](${t.url || ''})`;
             }
             default: {
               return translated;
@@ -536,7 +617,7 @@ export function reconstructSegmentsFromUnits(segments: MarkdownSegment[], transl
         return rebuilt;
       });
 
-      return { ...segment, content: rebuiltLines.join('\n') };
+  return { ...segment, content: normalizeBulletSpacing(rebuiltLines.join('\n')) };
     }
 
     // tokenization for regular single-line (or paragraph) text
@@ -555,14 +636,17 @@ export function reconstructSegmentsFromUnits(segments: MarkdownSegment[], transl
           return originalLeadingSpace + trimmedTranslated + originalTrailingSpace;
         }
         case 'bold': {
-          return `${t.wrapperStart || '**'}${translated}${t.wrapperEnd || '**'}`;
+          const normalized = translated.trim();
+          return `${t.wrapperStart || '**'}${normalized}${t.wrapperEnd || '**'}`;
         }
         case 'italic': {
-          return `${t.wrapperStart || '_'}${translated}${t.wrapperEnd || '_'}`;
+          const normalized = translated.trim();
+          return `${t.wrapperStart || '_'}${normalized}${t.wrapperEnd || '_'}`;
         }
         case 'link': {
           // t.url exists
-          return `[${translated}](${t.url || ''})`;
+          const normalized = translated.trim();
+          return `[${normalized}](${t.url || ''})`;
         }
         default: {
           return translated;
@@ -570,7 +654,7 @@ export function reconstructSegmentsFromUnits(segments: MarkdownSegment[], transl
       }
     }).join('');
 
-    return { ...segment, content: rebuilt };
+    return { ...segment, content: normalizeBulletSpacing(rebuilt) };
   });
 }
 
@@ -666,6 +750,8 @@ export function applyTranslations(
       if (inlineElements && inlineElements.length > 0) {
         translatedContent = restoreInlineMarkdown(translatedContent, inlineElements);
       }
+
+      translatedContent = normalizeBulletSpacing(translatedContent);
 
       translationIndex++;
       return {
