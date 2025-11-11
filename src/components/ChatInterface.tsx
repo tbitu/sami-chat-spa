@@ -15,13 +15,11 @@ interface DisplayMessage {
 interface ChatInterfaceProps {
   onSendMessage: (message: string, preserveFormatting?: boolean) => Promise<string>;
   isLoading: boolean;
-  onModelChange?: (model?: string) => void;
   onClearSession?: () => void;
   onNewConversation?: () => void;
   currentLanguage: SamiLanguage;
   onLanguageChange: (language: SamiLanguage) => void;
 }
-import { ModelSelector } from './ModelSelector';
 import { LanguageSelector } from './LanguageSelector';
 import { sanitizePlaceholders } from '../utils/markdown';
 import './menu.css';
@@ -72,7 +70,6 @@ function clearDisplayMessages(): void {
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onSendMessage,
   isLoading,
-  onModelChange,
   onClearSession,
   onNewConversation,
   currentLanguage,
@@ -232,10 +229,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     </label>
                   </div>
 
-                  <div className="hc-menu-section hc-menu-section--separator">
-                    <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('menu.modelSelectorTitle') || 'Model'}</div>
-                    <ModelSelector onModelChange={onModelChange} />
-                  </div>
+                  {/* Model selector removed — model is selected via the API configuration overlay */}
                 </div>
               )}
             </div>

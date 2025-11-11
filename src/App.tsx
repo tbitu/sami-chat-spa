@@ -155,11 +155,6 @@ function App() {
       <ChatInterface
         onSendMessage={handleSendMessage}
         isLoading={isLoading}
-        onModelChange={(model) => {
-          if (orchestrator && model) {
-            orchestrator.setGeminiModel(model);
-          }
-        }}
         onClearSession={() => {
           if (orchestrator) {
             orchestrator.clearSession();
