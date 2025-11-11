@@ -39,6 +39,21 @@ function App() {
     
     const orch = new ChatOrchestrator(geminiKey, openaiKey, geminiModel);
     
+    // If a session was restored, ensure its provider is compatible with the
+    // configured API keys. If not, create a fresh session using an available provider.
+    const restored = orch.getCurrentSession();
+    if (restored) {
+      // If session expects Gemini but user supplied only OpenAI, recreate as chatgpt
+      if (restored.provider === 'gemini' && (!geminiKey || !geminiKey.trim()) && openaiKey && openaiKey.trim()) {
+        orch.createSession('chatgpt');
+      }
+
+      // If session expects ChatGPT but user supplied only Gemini, recreate as gemini
+      if (restored.provider === 'chatgpt' && (!openaiKey || !openaiKey.trim()) && geminiKey && geminiKey.trim()) {
+        orch.createSession('gemini');
+      }
+    }
+
     // Only create a new session if one doesn't already exist (restored from sessionStorage)
     if (!orch.getCurrentSession()) {
       // Determine initial provider based on which keys are provided
