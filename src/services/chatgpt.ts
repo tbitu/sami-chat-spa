@@ -3,7 +3,26 @@ import { AIService, Message } from '../types/chat';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models';
-const DEFAULT_MODEL = 'gpt-4-turbo-preview';
+// Default should be the most recent recommended chat family (user requested)
+const DEFAULT_MODEL = 'gpt-5-mini';
+
+// Include GPT-5 family first, include chat variant, then gpt-4.1/gpt-4o/gpt-4, then gpt-3.5
+const SUPPORTED_MODEL_PREFIXES = ['gpt-5', 'gpt-5-chat', 'gpt-4.1', 'gpt-4o', 'gpt-4', 'gpt-3.5'];
+const EXCLUDED_MODEL_KEYWORDS = [
+  'instruct',
+  'base',
+  '0301',
+  '0314',
+  'audio',
+  'tts',
+  'whisper',
+  'embedding',
+  'moderation',
+  'preview',
+  'realtime',
+  'vision',
+];
+const DATE_SUFFIX_REGEX = /\d{4}-\d{2}-\d{2}$/;
 
 export interface OpenAIModel {
   id: string;
@@ -26,16 +45,36 @@ interface OpenAIRequest {
   model: string;
   messages: OpenAIMessage[];
   temperature?: number;
+  top_p?: number;
   max_tokens?: number;
   stream?: boolean;
+}
+
+interface OpenAIResponsePart {
+  type: string;
+  text?: string;
 }
 
 interface OpenAIResponse {
   choices: {
     message: {
-      content: string;
+      content: string | OpenAIResponsePart[];
     };
   }[];
+}
+
+function isSupportedOpenAIChatModel(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  if (!SUPPORTED_MODEL_PREFIXES.some(prefix => id.startsWith(prefix))) {
+    return false;
+  }
+  return !EXCLUDED_MODEL_KEYWORDS.some(keyword => id.includes(keyword));
+}
+
+function rankOpenAIModel(id: string): number {
+  const lower = id.toLowerCase();
+  const index = SUPPORTED_MODEL_PREFIXES.findIndex(prefix => lower.startsWith(prefix));
+  return index === -1 ? SUPPORTED_MODEL_PREFIXES.length : index;
 }
 
 export class ChatGPTService implements AIService {
@@ -65,39 +104,24 @@ export class ChatGPTService implements AIService {
       }
 
       const data: ListModelsResponse = await response.json();
-      
-      // Filter to only chat completion models (gpt-* models)
-      // Exclude deprecated models, base models, and instruct variants
-      const filteredModels = data.data.filter(model => {
-        const modelId = model.id.toLowerCase();
-        
-        // Only include GPT models
-        if (!modelId.startsWith('gpt-')) {
-          return false;
-        }
-        
-        // Exclude deprecated, instruct, base, and vision-only models
-        if (modelId.includes('instruct') || 
-            modelId.includes('base') ||
-            modelId.includes('0301') ||
-            modelId.includes('0314') ||
-            modelId.includes('vision')) {
-          return false;
-        }
-        
-        return true;
-      });
 
-      // Sort by model name (newer models first)
+      const filteredModels = data.data.filter(model => isSupportedOpenAIChatModel(model.id));
+
       return filteredModels.sort((a, b) => {
         const aId = a.id.toLowerCase();
         const bId = b.id.toLowerCase();
-        
-        // Prioritize gpt-4 over gpt-3.5
-        if (aId.startsWith('gpt-4') && !bId.startsWith('gpt-4')) return -1;
-        if (!aId.startsWith('gpt-4') && bId.startsWith('gpt-4')) return 1;
-        
-        // Then sort alphabetically
+
+        const rankDelta = rankOpenAIModel(aId) - rankOpenAIModel(bId);
+        if (rankDelta !== 0) {
+          return rankDelta;
+        }
+
+        const aIsAlias = !DATE_SUFFIX_REGEX.test(aId);
+        const bIsAlias = !DATE_SUFFIX_REGEX.test(bId);
+        if (aIsAlias !== bIsAlias) {
+          return aIsAlias ? -1 : 1;
+        }
+
         return aId.localeCompare(bId);
       });
     } catch (error) {
@@ -124,10 +148,10 @@ export class ChatGPTService implements AIService {
     messages: Message[],
     systemInstruction: string
   ): OpenAIMessage[] {
-    const systemMessage: OpenAIMessage = {
-      role: 'system',
-      content: systemInstruction,
-    };
+    const trimmedInstruction = systemInstruction?.trim();
+    const systemMessages: OpenAIMessage[] = trimmedInstruction
+      ? [{ role: 'system', content: trimmedInstruction }]
+      : [];
 
     const conversationMessages: OpenAIMessage[] = messages
       .filter(msg => msg.role !== 'system')
@@ -136,7 +160,7 @@ export class ChatGPTService implements AIService {
         content: msg.content,
       }));
 
-    return [systemMessage, ...conversationMessages];
+    return [...systemMessages, ...conversationMessages];
   }
 
   async sendMessage(
@@ -149,7 +173,8 @@ export class ChatGPTService implements AIService {
       model: this.model,
       messages: preparedMessages,
       temperature: 0.7,
-      max_tokens: 4096,
+      top_p: 0.95,
+      max_tokens: 8192,
     };
 
     const response = await fetch(OPENAI_API_URL, {
@@ -172,6 +197,9 @@ export class ChatGPTService implements AIService {
       if (response.status === 401) {
         throw new Error('Unauthorized. Please verify your OpenAI API key.');
       }
+      if (response.status === 403 && errorText.includes('insufficient_quota')) {
+        throw new Error('Quota exceeded. Please review your OpenAI plan and usage limits.');
+      }
       if (response.status === 404) {
         throw new Error('Model not found. Please check that the model exists and is accessible.');
       }
@@ -188,6 +216,28 @@ export class ChatGPTService implements AIService {
       throw new Error('No response from ChatGPT');
     }
 
-    return data.choices[0].message.content;
+    const content = this.extractMessageText(data.choices[0]?.message?.content);
+    if (!content) {
+      throw new Error('No textual response from ChatGPT');
+    }
+
+    return content;
+  }
+
+  private extractMessageText(content: string | OpenAIResponsePart[] | undefined): string {
+    if (typeof content === 'string') {
+      return content.trim();
+    }
+
+    if (Array.isArray(content)) {
+      const text = content
+        .map(part => (part.type === 'text' && part.text) ? part.text : '')
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+      return text;
+    }
+
+    return '';
   }
 }

@@ -131,11 +131,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   useEffect(() => {
     const handler = (ev: Event) => {
       try {
-        // @ts-ignore - CustomEvent
         const val = (ev as CustomEvent).detail?.value;
         if (typeof val === 'boolean') setPreserveFormatting(val);
-      } catch {
-        // ignore
+      } catch (err) {
+        // Keep non-empty to satisfy lint rules; log unexpected event shapes for debugging.
+        console.debug('[ChatInterface] preserve_formatting handler error:', err);
       }
     };
     window.addEventListener('sami_preserve_formatting_changed', handler as EventListener);
@@ -225,7 +225,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
                   <div className="hc-menu-section hc-menu-section--separator">
                     <label>
-                      <input type="checkbox" checked={preserveFormatting} onChange={(e) => { const newValue = e.target.checked; setPreserveFormatting(newValue); try { localStorage.setItem('sami_chat_preserve_formatting', String(newValue)); window.dispatchEvent(new CustomEvent('sami_preserve_formatting_changed', { detail: { value: newValue } })); } catch {} }} />
+                      <input type="checkbox" checked={preserveFormatting} onChange={(e) => { const newValue = e.target.checked; setPreserveFormatting(newValue); try { localStorage.setItem('sami_chat_preserve_formatting', String(newValue)); window.dispatchEvent(new CustomEvent('sami_preserve_formatting_changed', { detail: { value: newValue } })); } catch (err) { console.debug('[ChatInterface] Failed to persist preserve_formatting preference:', err); } }} />
                       <span style={{ marginLeft: 8 }}>{t('chatInterface.preserveFormatting')}</span>
                     </label>
                   </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { ChatInterface } from './components/ChatInterface';
 import { ApiConfig } from './components/ApiConfig';
 import { ChatOrchestrator } from './services/chat-orchestrator';
@@ -25,7 +25,7 @@ function App() {
 
   // persisted API-related localStorage keys are managed in the Chat header
 
-  const handleConfigured = (
+  const handleConfigured = useCallback((
     geminiKey: string, 
     openaiKey: string, 
     translationService: TranslationService,
@@ -51,7 +51,7 @@ function App() {
     }
     
     setOrchestrator(orch);
-  };
+  }, [samiLanguage]);
 
   const handleLanguageChange = (language: SamiLanguage) => {
     // Save to localStorage
@@ -97,7 +97,7 @@ function App() {
     } catch (e) {
       // ignore storage access errors
     }
-  }, []);
+  }, [handleConfigured, i18n, samiLanguage]);
 
   const handleSendMessage = async (message: string, preserveFormatting?: boolean): Promise<string> => {
     console.log('[App] handleSendMessage called with message:', message.substring(0, 50));

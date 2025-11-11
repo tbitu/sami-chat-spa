@@ -19,8 +19,9 @@ let translationConfig: TranslationConfig | null = null;
 function getEnvTranslationApiUrl(): string | undefined {
   try {
     // Vite exposes env vars via import.meta.env at build/runtime in the browser
-    const metaEnv = (typeof import.meta !== 'undefined' && (import.meta as any).env) ? (import.meta as any).env : undefined;
-    const fromImportMeta = metaEnv?.VITE_TRANSLATION_API_URL;
+    const maybeImportMeta = typeof import.meta !== 'undefined' ? (import.meta as unknown as { env?: Record<string, unknown> }) : undefined;
+    const metaEnv = maybeImportMeta?.env;
+    const fromImportMeta = metaEnv ? (metaEnv['VITE_TRANSLATION_API_URL'] as string | undefined) : undefined;
     if (typeof fromImportMeta === 'string' && fromImportMeta.trim()) {
       return fromImportMeta.trim();
     }
@@ -30,8 +31,8 @@ function getEnvTranslationApiUrl(): string | undefined {
 
   try {
     // Allow Node-based scripts (ts-node) to pick up the same variable when bundled differently
-    const globalProcess = typeof globalThis !== 'undefined' ? (globalThis as any).process : undefined;
-    const nodeEnv = globalProcess?.env;
+    const maybeGlobal = typeof globalThis !== 'undefined' ? (globalThis as unknown as { process?: { env?: Record<string, string> } }) : undefined;
+    const nodeEnv = maybeGlobal?.process?.env;
     const fromProcess = nodeEnv?.VITE_TRANSLATION_API_URL;
     if (typeof fromProcess === 'string' && fromProcess.trim()) {
       return fromProcess.trim();
@@ -77,9 +78,11 @@ export function configureTranslationService(config: TranslationConfig): void {
 /**
  * Update the Sami language for translation without changing other config
  */
-export function updateSamiLanguage(language: string): void {
+import type { SamiLanguage } from '../types/chat.ts';
+
+export function updateSamiLanguage(language: SamiLanguage): void {
   if (translationConfig) {
-    translationConfig.samiLanguage = language as any;
+    translationConfig.samiLanguage = language;
     console.log('[Translation] Sami language updated to:', language);
   }
 }
@@ -149,7 +152,7 @@ async function translateText(
   try {
     // Using configured translation service
     const appName = getApplicationName();
-    const bodyPayload: any = {
+    const bodyPayload: Record<string, unknown> = {
       text,
       src,
       tgt,
@@ -169,7 +172,7 @@ async function translateText(
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers,
-      body: JSON.stringify(bodyPayload as TartuNLPRequest),
+      body: JSON.stringify(bodyPayload as unknown as TartuNLPRequest),
       signal: controller?.signal,
     });
 
