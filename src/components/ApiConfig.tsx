@@ -16,7 +16,17 @@ interface ApiConfigProps {
 export const ApiConfig: React.FC<ApiConfigProps> = ({ onConfigured, currentLanguage, onLanguageChange }) => {
   const { t } = useTranslation();
   const [geminiKey, setGeminiKey] = useState('');
-  const [openaiKey, setOpenaiKey] = useState('');
+  // Initialize OpenAI key from localStorage to avoid the "remove on mount" effect
+  const [openaiKey, setOpenaiKey] = useState<string>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        return localStorage.getItem('sami_chat_openai_key') || '';
+      }
+    } catch {
+      // ignore
+    }
+    return '';
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   const [preserveFormatting, setPreserveFormatting] = useState<boolean>(() => {
     try {
@@ -178,11 +188,14 @@ export const ApiConfig: React.FC<ApiConfigProps> = ({ onConfigured, currentLangu
       return;
     }
     
-    // Validate OpenAI key format if provided
-    if (trimmedOpenaiKey && !trimmedOpenaiKey.startsWith('sk-')) {
-      setError('OpenAI API-čoavdda galggašii álggahit "sk-". Iskkut govvet olles čoavdaga.');
-      return;
-    }
+      // Validate OpenAI key format if provided. Accept both legacy 'sk-' and new 'oai-' prefixes.
+      if (
+        trimmedOpenaiKey &&
+        !(trimmedOpenaiKey.startsWith('sk-') || trimmedOpenaiKey.startsWith('oai-'))
+      ) {
+        setError('OpenAI API-čoavdda galggašii álggahit "sk-" dahje "oai-". Iskkut govvet olles čoavdaga.');
+        return;
+      }
     
     onConfigured(trimmedGeminiKey, trimmedOpenaiKey, translationService, selectedModel || undefined);
   };

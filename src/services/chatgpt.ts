@@ -46,7 +46,8 @@ interface OpenAIRequest {
   messages: OpenAIMessage[];
   temperature?: number;
   top_p?: number;
-  max_tokens?: number;
+  // Use max_completion_tokens per OpenAI Responses/Chat API docs; max_tokens is deprecated
+  max_completion_tokens?: number;
   stream?: boolean;
 }
 
@@ -169,12 +170,12 @@ export class ChatGPTService implements AIService {
   ): Promise<string> {
     const preparedMessages = this.prepareMessages(messages, systemInstruction);
 
+    // Build the minimal request payload. Some models reject optional params
+    // like temperature/top_p/max_completion_tokens. Sending only the
+    // required fields (model + messages) avoids unsupported-parameter errors.
     const request: OpenAIRequest = {
       model: this.model,
       messages: preparedMessages,
-      temperature: 0.7,
-      top_p: 0.95,
-      max_tokens: 8192,
     };
 
     const response = await fetch(OPENAI_API_URL, {

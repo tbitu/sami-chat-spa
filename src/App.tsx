@@ -118,6 +118,26 @@ function App() {
     }
   };
 
+  const handleNewConversation = useCallback(() => {
+    if (!orchestrator) return;
+
+    // Clear current session but keep API keys in localStorage
+    orchestrator.clearSession();
+
+    // Create a new session with the same default provider logic
+    const storedGemini = localStorage.getItem('sami_chat_gemini_key') || '';
+    const storedOpenai = localStorage.getItem('sami_chat_openai_key') || '';
+
+    let initialProvider: AIProvider = 'gemini';
+    if (!storedGemini.trim() && storedOpenai.trim()) {
+      initialProvider = 'chatgpt';
+    }
+
+    orchestrator.createSession(initialProvider);
+    // Force re-render by recreating the orchestrator object in state
+    setOrchestrator(orchestrator);
+  }, [orchestrator]);
+
   if (!orchestrator) {
     return (
       <div>
@@ -145,6 +165,7 @@ function App() {
             orchestrator.clearSession();
           }
         }}
+        onNewConversation={handleNewConversation}
         currentLanguage={samiLanguage}
         onLanguageChange={handleLanguageChange}
       />

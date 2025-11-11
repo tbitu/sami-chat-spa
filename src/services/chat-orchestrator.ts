@@ -25,8 +25,8 @@ Therefore, when composing answers:
 Remember: the end user reads the conversation in Northern Sami after translation. Your internal answer language must be Finnish for the translation step to deliver a correct Sami reply.`;
 
 // Retry configuration
-const MAX_LLM_LANGUAGE_RETRIES = 2; // Max retries for wrong language from LLM (Stage 2)
-const MAX_TRANSLATION_RETRIES = 1;  // Max retries for translation quality issues (Stage 3)
+// Note: language-based retries were removed per new behavior. Translation/http retries
+// are still handled inside translation.ts (translateText). Keep Finnish threshold.
 const FINNISH_CONFIDENCE_THRESHOLD = 0.7; // Minimum confidence to accept Finnish output
 
 const SESSION_STORAGE_KEY = 'sami_chat_session';
@@ -185,48 +185,21 @@ export class ChatOrchestrator {
     // Step 3: Send to AI provider with retry logic for language validation
     console.log(`[Orchestrator] Sending message to ${this.currentSession.provider}...`);
     const service = this.getService(this.currentSession.provider);
-    let assistantResponseInFinnish = await service.sendMessage(
+    const assistantResponseInFinnish = await service.sendMessage(
       this.currentSession.messages,
       this.currentSession.systemInstruction
     );
 
     // STAGE 2: Post-LLM - Validate LLM responded in Finnish
-    console.log('[Orchestrator] Stage 2: Validating LLM response language...');
-    let llmRetryCount = 0;
-    let finnishValidation = validateFinnishOutput(assistantResponseInFinnish, FINNISH_CONFIDENCE_THRESHOLD);
-    
-    while (!finnishValidation.isValid && llmRetryCount < MAX_LLM_LANGUAGE_RETRIES) {
-      llmRetryCount++;
-      console.warn(`[Orchestrator] LLM validation failed (attempt ${llmRetryCount}/${MAX_LLM_LANGUAGE_RETRIES}):`, finnishValidation.errors);
-      console.warn(`[Orchestrator] Detected language: ${finnishValidation.language}, confidence: ${finnishValidation.confidence.toFixed(2)}`);
-      
-      // Build retry instruction emphasizing Finnish requirement
-      const retryInstruction = `${this.currentSession.systemInstruction}
-
-⚠️ RETRY NOTICE: Your previous response was detected as ${finnishValidation.language} with ${(finnishValidation.confidence * 100).toFixed(0)}% confidence. This is INCORRECT.
-
-You MUST respond ONLY in Finnish (suomi). The translation system requires Finnish output.
-Please reformulate your answer in clear, simple Finnish.`;
-
-      // Remove the failed response from history
-      this.currentSession.messages.pop();
-      
-      // Retry with enhanced instruction
-      assistantResponseInFinnish = await service.sendMessage(
-        this.currentSession.messages,
-        retryInstruction
-      );
-      
-      // Re-validate
-      finnishValidation = validateFinnishOutput(assistantResponseInFinnish, FINNISH_CONFIDENCE_THRESHOLD);
-    }
-    
+    // NOTE: Do not retry the LLM on language mismatch anymore. We validate and log
+    // issues but proceed to translation so that downstream translation diagnostics
+    // (including Cyrillic detection) can run and be surfaced to the user.
+    console.log('[Orchestrator] Stage 2: Validating LLM response language (no-retry)...');
+    const finnishValidation = validateFinnishOutput(assistantResponseInFinnish, FINNISH_CONFIDENCE_THRESHOLD);
     if (!finnishValidation.isValid) {
-      console.error('[Orchestrator] LLM still not responding in Finnish after retries. Proceeding with translation anyway.');
-      // Log warnings but continue (fallback behavior)
-      for (const warning of finnishValidation.warnings) {
-        console.warn(`[Orchestrator] ${warning}`);
-      }
+      console.warn('[Orchestrator] LLM language validation failed (no retries will be attempted):', finnishValidation.errors);
+      console.warn(`[Orchestrator] Detected language: ${finnishValidation.language}, confidence: ${finnishValidation.confidence.toFixed(2)}`);
+      for (const w of finnishValidation.warnings) console.warn('[Orchestrator]', w);
     }
 
     // Step 4: Add assistant response to history
@@ -241,7 +214,7 @@ Please reformulate your answer in clear, simple Finnish.`;
 
     // Step 5: Translate response from Finnish to Sami
     console.log('[Orchestrator] Translating response from Finnish to Sami...');
-    let assistantResponseInSami = await translateWithMarkdown(
+    const assistantResponseInSami = await translateWithMarkdown(
       assistantResponseInFinnish,
       'fin-sami',
       preserveFormatting
@@ -249,68 +222,10 @@ Please reformulate your answer in clear, simple Finnish.`;
 
     // STAGE 3: Post-Translation - Validate Sami output quality
     console.log('[Orchestrator] Stage 3: Validating Sami output...');
-    let translationRetryCount = 0;
-    let samiValidation = validateSamiOutput(assistantResponseInSami);
-    
-    while (!samiValidation.isValid && translationRetryCount < MAX_TRANSLATION_RETRIES) {
-      translationRetryCount++;
-      console.warn(`[Orchestrator] Sami validation failed (attempt ${translationRetryCount}/${MAX_TRANSLATION_RETRIES}):`, samiValidation.errors);
-      
-      // Request LLM to rephrase in simpler Finnish
-      const rephraseInstruction = `The following Finnish response caused translation errors when converted to Northern Sami:
+    const samiValidation = validateSamiOutput(assistantResponseInSami);
 
---- ORIGINAL FINNISH RESPONSE ---
-${assistantResponseInFinnish}
---- END ORIGINAL ---
-
-Translation errors detected:
-${samiValidation.errors.join('\n')}
-
-Please rewrite this ENTIRE response in simpler, clearer Finnish that will translate better to Northern Sami.
-Requirements:
-- Keep the same information and structure
-- Use shorter, simpler sentences
-- Avoid complex compound words
-- Use common, everyday vocabulary
-- Maintain the same level of detail and helpfulness
-
-Provide the complete rewritten response in Finnish:`;
-
-      const rephraseMessage: Message = {
-        role: 'user',
-        content: rephraseInstruction,
-      };
-      
-      // Get rephrased response (don't add rephrase message to permanent history)
-      const rephrasedFinnish = await service.sendMessage(
-        [...this.currentSession.messages, rephraseMessage],
-        this.currentSession.systemInstruction
-      );
-      
-      console.log('[Orchestrator] Received rephrased response:', rephrasedFinnish.substring(0, 200) + '...');
-      
-      // Update the original Finnish response for re-translation
-      assistantResponseInFinnish = rephrasedFinnish;
-      
-      // Also update the assistant message in history with rephrased version
-      this.currentSession.messages[this.currentSession.messages.length - 1].content = rephrasedFinnish;
-      saveSessionToStorage(this.currentSession);
-      
-      // Re-translate
-      assistantResponseInSami = await translateWithMarkdown(rephrasedFinnish, 'fin-sami', preserveFormatting);
-      
-      // Re-validate
-      samiValidation = validateSamiOutput(assistantResponseInSami);
-    }
-    
     if (!samiValidation.isValid) {
-      console.error('[Orchestrator] Sami output still invalid after retries:', samiValidation.errors);
-
-      // Graceful fallback: instead of throwing an error which surfaces to the UI,
-      // return the original Finnish assistant response together with a visible
-      // warning. We attempt to translate the warning into Sami; if that fails,
-      // we fall back to the Finnish warning. This ensures the user receives
-      // meaningful content instead of an error page.
+      console.error('[Orchestrator] Sami output invalid:', samiValidation.errors);
 
       // Localize the warning with i18n, passing the error details. The locale string
       // includes a placeholder {{errors}} which we fill with a semicolon-joined list.
@@ -333,11 +248,11 @@ Provide the complete rewritten response in Finnish:`;
       const WARNING_END = '@@WARNING_END@@';
       const fallbackResponse = `${WARNING_START}${warningToShow}${WARNING_END}\n\n${assistantResponseInSami}`;
 
-  // Log the fallback and return it to the caller instead of throwing
-  console.warn('[Orchestrator] Returning fallback response (translated Sami text + warning)');
-  return fallbackResponse;
+      // Log the fallback and return it to the caller instead of throwing
+      console.warn('[Orchestrator] Returning fallback response (translated Sami text + warning)');
+      return fallbackResponse;
     }
-    
+
     // Log warnings if any
     for (const warning of samiValidation.warnings) {
       console.warn(`[Orchestrator] ${warning}`);

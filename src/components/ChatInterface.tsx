@@ -17,6 +17,7 @@ interface ChatInterfaceProps {
   isLoading: boolean;
   onModelChange?: (model?: string) => void;
   onClearSession?: () => void;
+  onNewConversation?: () => void;
   currentLanguage: SamiLanguage;
   onLanguageChange: (language: SamiLanguage) => void;
 }
@@ -73,6 +74,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   isLoading,
   onModelChange,
   onClearSession,
+  onNewConversation,
   currentLanguage,
   onLanguageChange,
 }) => {
@@ -219,7 +221,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               {menuOpen && (
                 <div className="hc-menu-dropdown">
                   <div className="hc-menu-section hc-menu-actions">
-                    <button onClick={() => { clearDisplayMessages(); setMessages([]); setMenuOpen(false); if (onClearSession) onClearSession(); setTimeout(() => window.location.reload(), 50); }}>{t('menu.salke')}</button>
+                    <button onClick={() => { clearDisplayMessages(); setMessages([]); setMenuOpen(false); if (onClearSession) onClearSession(); if (onNewConversation) onNewConversation(); }}>{t('menu.salke')}</button>
                     <button onClick={() => { clearPersistence(); window.location.reload(); }}>{t('menu.resetPersistence')}</button>
                   </div>
 
