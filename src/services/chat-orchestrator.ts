@@ -452,10 +452,9 @@ export class ChatOrchestrator {
       
       try {
         console.log(`[Orchestrator] Flushing ${blockType} block (${linesToTranslate.length} lines)`);
-        
         pendingTranslations++;
-        try {
-          // For lists: translate each item individually to avoid pipe separator corruption
+        
+        // For lists: translate each item individually to avoid pipe separator corruption
         // For code/tables: translate as a single block to preserve structure
         if (blockType === 'list') {
           for (const line of linesToTranslate) {
@@ -638,9 +637,9 @@ export class ChatOrchestrator {
       } catch (err) {
         console.warn(`[Orchestrator] ${blockType} block translation failed:`, err);
       } finally {
-        isFlushingBlock = false;
         pendingTranslations--;
         checkCompletion();
+        isFlushingBlock = false;
       }
     };
 
@@ -722,9 +721,9 @@ export class ChatOrchestrator {
               }
 
               
-              pendingTranslations++;
               // Regular line - flush any block and translate
               await flushStructuredBlock();
+              pendingTranslations++;
               try {
                 let translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
                 translated = normalizeTranslatedSpacing(translated);
@@ -758,11 +757,15 @@ export class ChatOrchestrator {
                 
                 handlers.onPartial(translated + '\n');
               } catch (err) {
-                finally {
+                console.warn('[Orchestrator] Line translation failed:', err);
+              } finally {
                 pendingTranslations--;
                 checkCompletion();
-              } console.warn('[Orchestrator] Line translation failed:', err);
-            llmDone = true; // Mark LLM as finished
+              }
+            }
+          },
+          onDone: async (finalFinnish: string) => {
+            llmDone = true;
             
             const assistantFinnish = (finalFinnish && finalFinnish.trim().length > 0)
               ? finalFinnish
@@ -774,11 +777,6 @@ export class ChatOrchestrator {
             // Translate any remaining incomplete line
             if (pendingLines.trim().length > 0) {
               pendingTranslations++;
-            // Flush any remaining structured block
-            await flushStructuredBlock();
-
-            // Translate any remaining incomplete line
-            if (pendingLines.trim().length > 0) {
               try {
                 let translated = await translateWithMarkdown(pendingLines, 'fin-sami', preserveFormatting);
                 
@@ -807,6 +805,8 @@ export class ChatOrchestrator {
                 handlers.onPartial(translated);
               } catch (err) {
                 console.warn('[Orchestrator] Final line translation failed:', err);
+              } finally {
+                pendingTranslations--;
               }
             }
 
@@ -831,7 +831,8 @@ export class ChatOrchestrator {
             console.log('[Orchestrator] Streaming translation complete');
             console.log('[Orchestrator] Stage 3 (stream): Sami output validation skipped (done incrementally)');
             
-            handlers.onDone('');
+            // Check if all translations are done
+            checkCompletion();
           },
           onError: (err: Error) => {
             handlers.onError(err);
