@@ -414,6 +414,7 @@ export class ChatOrchestrator {
     }
 
     let finnishBuffer = '';
+    let pendingSegment = '';
 
     try {
       await service.streamMessage(
@@ -422,17 +423,38 @@ export class ChatOrchestrator {
         {
           onPartial: async (chunk: string) => {
             finnishBuffer += chunk;
-            try {
-              const translatedChunk = await translateWithMarkdown(chunk, 'fin-sami', preserveFormatting);
-              handlers.onPartial(translatedChunk);
-            } catch (err) {
-              console.warn('[Orchestrator] Partial translation failed, skipping chunk:', err);
+            pendingSegment += chunk;
+
+            // Translate completed lines (flush at newline boundaries) to reduce per-word translations
+            const lines = pendingSegment.split('\n');
+            // Keep the last (possibly incomplete) line in the buffer
+            if (lines.length > 1) {
+              const complete = lines.slice(0, -1).join('\n');
+              pendingSegment = lines[lines.length - 1] ?? '';
+              if (complete.trim().length > 0) {
+                try {
+                  const translatedChunk = await translateWithMarkdown(complete, 'fin-sami', preserveFormatting);
+                  handlers.onPartial(translatedChunk + '\n');
+                } catch (err) {
+                  console.warn('[Orchestrator] Partial translation (line batch) failed, skipping chunk:', err);
+                }
+              }
             }
           },
           onDone: async (finalFinnish: string) => {
             const assistantFinnish = (finalFinnish && finalFinnish.trim().length > 0)
               ? finalFinnish
               : finnishBuffer;
+
+            // Flush any remaining pending segment as a partial before final translation
+            if (pendingSegment.trim().length > 0) {
+              try {
+                const translatedRemainder = await translateWithMarkdown(pendingSegment, 'fin-sami', preserveFormatting);
+                handlers.onPartial(translatedRemainder);
+              } catch (err) {
+                console.warn('[Orchestrator] Final partial translation failed (remainder), skipping:', err);
+              }
+            }
 
             const assistantMessage: Message = {
               role: 'assistant',
