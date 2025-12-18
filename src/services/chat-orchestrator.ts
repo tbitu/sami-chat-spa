@@ -31,6 +31,14 @@ const FINNISH_CONFIDENCE_THRESHOLD = 0.7; // Minimum confidence to accept Finnis
 
 const SESSION_STORAGE_KEY = 'sami_chat_session';
 
+interface ChatOrchestratorOptions {
+  proxyBaseUrl?: string;
+  enableGemini?: boolean;
+  enableChatGpt?: boolean;
+  chatGptModel?: string;
+  initialProvider?: AIProvider;
+}
+
 // Helper functions for session persistence
 function saveSessionToStorage(session: ChatSession): void {
   try {
@@ -75,16 +83,39 @@ export class ChatOrchestrator {
   private chatGptService?: ChatGPTService;
   private currentSession?: ChatSession;
 
-  constructor(geminiApiKey?: string, openaiApiKey?: string, geminiModel?: string) {
-    if (geminiApiKey) {
-      this.geminiService = new GeminiService(geminiApiKey, geminiModel);
+  constructor(
+    geminiApiKey?: string,
+    openaiApiKey?: string,
+    geminiModel?: string,
+    options?: ChatOrchestratorOptions
+  ) {
+    const proxyBaseUrl = options?.proxyBaseUrl?.replace(/\/$/, '');
+    const geminiEnabled = Boolean(geminiApiKey) || Boolean(options?.enableGemini);
+    const chatGptEnabled = Boolean(openaiApiKey) || Boolean(options?.enableChatGpt);
+
+    if (geminiEnabled && (geminiApiKey || proxyBaseUrl !== undefined)) {
+      this.geminiService = new GeminiService(geminiApiKey, geminiModel, { proxyBaseUrl });
     }
-    if (openaiApiKey) {
-      this.chatGptService = new ChatGPTService(openaiApiKey);
+    if (chatGptEnabled && (openaiApiKey || proxyBaseUrl !== undefined)) {
+      this.chatGptService = new ChatGPTService(openaiApiKey, options?.chatGptModel, { proxyBaseUrl });
     }
-    
-    // Try to restore session from sessionStorage
+
+    // Try to restore session from sessionStorage; discard it if provider is unavailable.
     this.restoreSession();
+    if (this.currentSession && !this.hasProvider(this.currentSession.provider)) {
+      this.currentSession = undefined;
+    }
+
+    // If we have no active session but at least one provider, create a new one using the preferred provider.
+    if (!this.currentSession) {
+      const available = this.getAvailableProviders();
+      if (available.length > 0) {
+        const initial = options?.initialProvider && available.includes(options.initialProvider)
+          ? options.initialProvider
+          : available[0];
+        this.createSession(initial);
+      }
+    }
   }
 
   /**
@@ -109,6 +140,17 @@ export class ChatOrchestrator {
     }
   }
 
+  getAvailableProviders(): AIProvider[] {
+    const providers: AIProvider[] = [];
+    if (this.geminiService) providers.push('gemini');
+    if (this.chatGptService) providers.push('chatgpt');
+    return providers;
+  }
+
+  private hasProvider(provider: AIProvider): boolean {
+    return provider === 'gemini' ? Boolean(this.geminiService) : Boolean(this.chatGptService);
+  }
+
   private getService(provider: AIProvider): AIService {
     if (provider === 'gemini') {
       if (!this.geminiService) {
@@ -124,6 +166,10 @@ export class ChatOrchestrator {
   }
 
   createSession(provider: AIProvider, customInstruction?: string): ChatSession {
+    if (!this.hasProvider(provider)) {
+      throw new Error(`Provider ${provider} not configured`);
+    }
+
     this.currentSession = {
       id: crypto.randomUUID(),
       provider,

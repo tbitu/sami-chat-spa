@@ -8,7 +8,7 @@ Chat with AI assistants (Google Gemini and OpenAI ChatGPT) in **all five Sami la
 - 🤖 **Dual AI providers**: Google Gemini (default: gemini-flash-latest) and OpenAI ChatGPT
 - 📝 **Smart markdown preservation**: Code blocks, tables, and formatting preserved during translation
 - 🔍 **3-stage language validation**: Ensures quality at input, LLM output, and translation stages
-- 🔒 **Privacy-first**: API keys stored locally in browser only; supports local translation backend
+- 🔒 **Privacy-first**: API keys stay local by default; optional server-side proxy hides keys in production
 - 🔄 **Intelligent retry logic**: Automatic recovery from translation and language detection issues
 
 ## Prerequisites
@@ -33,6 +33,66 @@ npm run dev
 ```
 
 Open `http://localhost:5173` in your browser.
+
+### Optional: Server-Side Proxy With Hidden Keys
+
+If you deploy behind Apache and do not run `npm run proxy`, you can let Apache inject the keys while proxying the real APIs. The SPA already sends requests to relative `/api/...` paths; we just need Apache to:
+
+1) Serve a static server-config so the SPA auto-enables proxy mode
+2) Forward `/api/proxy/chatgpt` to OpenAI with an injected `Authorization` header
+3) Forward `/api/proxy/gemini` to Gemini with the `key` query param injected
+
+**Step 1: Add static config** (adjust document root as needed):
+
+```bash
+cat >/var/www/html/api/server-config.json <<'EOF'
+{
+  "proxyBaseUrl": "", 
+  "providers": {
+    "chatgpt": { "enabled": true, "model": "gpt-5-mini" },
+    "gemini": { "enabled": false, "model": "gemini-flash-latest" }
+  }
+}
+EOF
+```
+
+Map it with Apache:
+
+```apache
+Alias /api/server-config /var/www/html/api/server-config.json
+<Files "/var/www/html/api/server-config.json">
+  Header set Content-Type "application/json"
+</Files>
+```
+
+**Step 2: Proxy OpenAI with injected key** (replace `YOUR_OPENAI_KEY`):
+
+```apache
+ProxyPass        /api/proxy/chatgpt https://api.openai.com/v1/chat/completions retry=0
+ProxyPassReverse /api/proxy/chatgpt https://api.openai.com/v1/chat/completions
+RequestHeader set Authorization "Bearer YOUR_OPENAI_KEY" env=proxychatgpt
+RequestHeader set Content-Type "application/json" env=proxychatgpt
+SetEnvIf Request_URI "^/api/proxy/chatgpt" proxychatgpt
+```
+
+**Step 3: Proxy Gemini with injected key** (replace `YOUR_GEMINI_KEY` if you enable Gemini):
+
+```apache
+# This preserves the model path sent by the SPA (defaults to gemini-flash-latest)
+ProxyPassMatch   ^/api/proxy/gemini/(.*)$ https://generativelanguage.googleapis.com/v1beta/models/$1 retry=0
+ProxyPass        /api/proxy/gemini https://generativelanguage.googleapis.com/v1beta/models retry=0
+ProxyPassReverse /api/proxy/gemini https://generativelanguage.googleapis.com/v1beta/models
+RequestHeader set Content-Type "application/json" env=proxygemini
+SetEnvIf Request_URI "^/api/proxy/gemini" proxygemini
+
+# Append the API key when missing; works because SPA does not send a key
+RequestHeader edit Destination "(.*)" "$1?key=YOUR_GEMINI_KEY" env=proxygemini
+```
+
+Notes:
+- Keep the `/api` paths intact; the SPA already uses relative URLs, so it works under `/` or `/chat`.
+- Responses are consumed as-is; no server-side JSON wrapping is required.
+- If you only want one provider, disable the other in `server-config.json` to hide it from the SPA.
 
 ## Usage
 
@@ -73,10 +133,17 @@ npm run build    # TypeScript compile + Vite build → dist/
 npm run preview  # Preview production build
 npm run lint     # Run ESLint (ts/tsx files)
 npm test         # Run Vitest unit tests
+npm run proxy    # Start minimal AI proxy that injects server-side keys (optional)
 ```
 
 **Environment Variables**:
 - `VITE_TRANSLATION_API_URL`: Override default translation backend URL
+- `SERVER_GEMINI_API_KEY`: Server-side Gemini key (enables hidden-key proxy)
+- `SERVER_OPENAI_API_KEY`: Server-side OpenAI key (enables hidden-key proxy)
+- `SERVER_GEMINI_MODEL`: Override Gemini model for the proxy (default `gemini-flash-latest`)
+- `SERVER_OPENAI_MODEL`: Override OpenAI model for the proxy (default `gpt-5-mini`)
+- `PORT` / `SERVER_PORT`: Port for the proxy server (default `8788`)
+- `CORS_ALLOW_ORIGIN`: Optional CORS allowlist for the proxy (default `*`)
 
 **Testing**:
 - Manual testing: `npm run dev` then test with Sami input

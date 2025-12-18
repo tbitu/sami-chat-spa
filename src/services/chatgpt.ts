@@ -24,6 +24,10 @@ const EXCLUDED_MODEL_KEYWORDS = [
 ];
 const DATE_SUFFIX_REGEX = /\d{4}-\d{2}-\d{2}$/;
 
+interface ChatGPTServiceOptions {
+  proxyBaseUrl?: string;
+}
+
 export interface OpenAIModel {
   id: string;
   object: string;
@@ -81,16 +85,28 @@ function rankOpenAIModel(id: string): number {
 export class ChatGPTService implements AIService {
   private apiKey: string;
   private model: string;
+  private proxyBaseUrl?: string;
+  private mode: 'direct' | 'proxy';
 
-  constructor(apiKey: string, model: string = DEFAULT_MODEL) {
-    this.apiKey = apiKey;
+  constructor(apiKey: string | undefined, model: string = DEFAULT_MODEL, options?: ChatGPTServiceOptions) {
+    this.proxyBaseUrl = options?.proxyBaseUrl !== undefined ? options.proxyBaseUrl.replace(/\/$/, '') : undefined;
+    this.mode = this.proxyBaseUrl !== undefined ? 'proxy' : 'direct';
+    this.apiKey = apiKey || '';
     this.model = model;
+
+    if (this.mode === 'direct' && !this.apiKey) {
+      throw new Error('OpenAI API key not configured');
+    }
   }
 
   /**
    * Fetch available models from the OpenAI API
    */
   async listAvailableModels(): Promise<OpenAIModel[]> {
+    if (this.mode === 'proxy') {
+      return [];
+    }
+
     try {
       const response = await fetch(OPENAI_MODELS_URL, {
         method: 'GET',
@@ -168,6 +184,10 @@ export class ChatGPTService implements AIService {
     messages: Message[],
     systemInstruction: string
   ): Promise<string> {
+    if (this.mode === 'proxy') {
+      return this.sendViaProxy(messages, systemInstruction);
+    }
+
     const preparedMessages = this.prepareMessages(messages, systemInstruction);
 
     // Build the minimal request payload. Some models reject optional params
@@ -223,6 +243,57 @@ export class ChatGPTService implements AIService {
     }
 
     return content;
+  }
+
+  private async sendViaProxy(
+    messages: Message[],
+    systemInstruction: string
+  ): Promise<string> {
+    const target = this.buildProxyUrl('api/proxy/chatgpt');
+
+    const response = await fetch(target, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages,
+        systemInstruction,
+        model: this.model,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Proxy ChatGPT error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const data = await response.json() as { content?: string; choices?: OpenAIResponse['choices'] };
+
+    // Prefer wrapped { content } shape
+    if (data.content && typeof data.content === 'string') {
+      return data.content;
+    }
+
+    // Fallback: if Apache proxy returns raw OpenAI response, extract it
+    if (Array.isArray(data.choices) && data.choices.length > 0) {
+      const extracted = this.extractMessageText(data.choices[0]?.message?.content as string | OpenAIResponsePart[] | undefined);
+      if (extracted) return extracted;
+    }
+
+    throw new Error('Proxy ChatGPT returned no content');
+  }
+
+  private buildProxyUrl(path: string): string {
+    const normalizedPath = path.replace(/^\//, '');
+    if (this.proxyBaseUrl === undefined || this.proxyBaseUrl === null) {
+      // Default to relative path so subpath deployments (e.g., /chat) work without extra config.
+      return normalizedPath;
+    }
+
+    const base = this.proxyBaseUrl.replace(/\/$/, '');
+    if (!base) return normalizedPath;
+    return `${base}/${normalizedPath}`;
   }
 
   private extractMessageText(content: string | OpenAIResponsePart[] | undefined): string {

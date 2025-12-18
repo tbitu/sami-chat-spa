@@ -6,6 +6,10 @@ import { AIService, Message } from '../types/chat';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
+interface GeminiServiceOptions {
+  proxyBaseUrl?: string;
+}
+
 export interface GeminiModel {
   name: string;
   displayName: string;
@@ -46,16 +50,28 @@ interface GeminiResponse {
 export class GeminiService implements AIService {
   private apiKey: string;
   private model: string;
+  private proxyBaseUrl?: string;
+  private mode: 'direct' | 'proxy';
 
-  constructor(apiKey: string, model: string = DEFAULT_MODEL) {
-    this.apiKey = apiKey;
+  constructor(apiKey: string | undefined, model: string = DEFAULT_MODEL, options?: GeminiServiceOptions) {
+    this.proxyBaseUrl = options?.proxyBaseUrl !== undefined ? options.proxyBaseUrl.replace(/\/$/, '') : undefined;
+    this.mode = this.proxyBaseUrl !== undefined ? 'proxy' : 'direct';
+    this.apiKey = apiKey || '';
     this.model = model;
+
+    if (this.mode === 'direct' && !this.apiKey) {
+      throw new Error('Gemini API key not configured');
+    }
   }
 
   /**
    * Fetch available models from the Gemini API
    */
   async listAvailableModels(): Promise<GeminiModel[]> {
+    if (this.mode === 'proxy') {
+      return [];
+    }
+
     try {
       const response = await fetch(`${GEMINI_API_BASE}?key=${this.apiKey}`);
       
@@ -141,6 +157,10 @@ export class GeminiService implements AIService {
     messages: Message[],
     systemInstruction: string
   ): Promise<string> {
+    if (this.mode === 'proxy') {
+      return this.sendViaProxy(messages, systemInstruction);
+    }
+
     const contents = this.convertMessages(messages);
 
     const request: GeminiRequest = {
@@ -193,5 +213,55 @@ export class GeminiService implements AIService {
     }
 
     return data.candidates[0].content.parts[0].text;
+  }
+
+  private async sendViaProxy(
+    messages: Message[],
+    systemInstruction: string
+  ): Promise<string> {
+    const target = this.buildProxyUrl('api/proxy/gemini');
+
+    const response = await fetch(target, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages,
+        systemInstruction,
+        model: this.model,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Proxy Gemini error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+    const data = await response.json() as { content?: string; candidates?: { content?: { parts?: { text?: string }[] } }[] };
+
+    // Prefer wrapped { content } shape
+    if (data.content && typeof data.content === 'string') {
+      return data.content.trim();
+    }
+
+    // Fallback: raw Gemini response
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (typeof text === 'string' && text.trim()) {
+      return text.trim();
+    }
+
+    throw new Error('Proxy Gemini returned no content');
+  }
+
+  private buildProxyUrl(path: string): string {
+    const normalizedPath = path.replace(/^\//, '');
+    if (this.proxyBaseUrl === undefined || this.proxyBaseUrl === null) {
+      // Default to relative path so subpath deployments (e.g., /chat) work without extra config.
+      return normalizedPath;
+    }
+
+    const base = this.proxyBaseUrl.replace(/\/$/, '');
+    if (!base) return normalizedPath;
+    return `${base}/${normalizedPath}`;
   }
 }

@@ -6,6 +6,8 @@ import { AIProvider, TranslationService, SamiLanguage } from './types/chat';
 import { configureTranslationService } from './services/translation';
 import './App.css';
 import { useTranslation } from 'react-i18next';
+import type { ServerConfig } from './services/server-config';
+import { fetchServerConfig, pickServerProvider } from './services/server-config';
 
 
 function App() {
@@ -13,6 +15,8 @@ function App() {
   
   const [orchestrator, setOrchestrator] = useState<ChatOrchestrator | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [configChecked, setConfigChecked] = useState(false);
+  const [serverConfig, setServerConfig] = useState<ServerConfig | null>(null);
   const [samiLanguage, setSamiLanguage] = useState<SamiLanguage>(() => {
     // Load saved language from localStorage or default to Northern Sami
     try {
@@ -31,6 +35,9 @@ function App() {
     translationService: TranslationService,
     geminiModel?: string
   ) => {
+    // Server-configured proxies take precedence; the manual flow is disabled when serverConfig is present.
+    if (serverConfig) return;
+
     // Configure translation service with current Sami language
     configureTranslationService({ 
       service: translationService,
@@ -66,7 +73,7 @@ function App() {
     }
     
     setOrchestrator(orch);
-  }, [samiLanguage]);
+  }, [samiLanguage, serverConfig]);
 
   const handleLanguageChange = (language: SamiLanguage) => {
     // Save to localStorage
@@ -92,6 +99,64 @@ function App() {
 
   // Auto-configure from localStorage if keys exist
   useEffect(() => {
+    if (serverConfig) {
+      setConfigChecked(true);
+      return;
+    }
+
+    const controller = new AbortController();
+    (async () => {
+      const config = await fetchServerConfig(controller.signal);
+      if (config) {
+        setServerConfig(config);
+
+        if (samiLanguage !== i18n.language) {
+          i18n.changeLanguage(samiLanguage);
+        }
+
+        let storedTranslation: TranslationService = 'tartunlp-public';
+        try {
+          if (typeof window !== 'undefined') {
+            storedTranslation = (localStorage.getItem('sami_chat_translation_service') || 'tartunlp-public') as TranslationService;
+          }
+        } catch {
+          // ignore storage access issues
+        }
+        configureTranslationService({
+          service: config.translationService || storedTranslation,
+          samiLanguage,
+        });
+
+        const preferredProvider = pickServerProvider(config);
+        if (preferredProvider) {
+          const orch = new ChatOrchestrator(undefined, undefined, config.providers.gemini?.model, {
+            proxyBaseUrl: config.proxyBaseUrl,
+            enableGemini: Boolean(config.providers.gemini?.enabled),
+            enableChatGpt: Boolean(config.providers.chatgpt?.enabled),
+            chatGptModel: config.providers.chatgpt?.model,
+            initialProvider: preferredProvider,
+          });
+
+          // Start a clean server-backed session
+          orch.clearSession();
+          orch.createSession(preferredProvider);
+          setOrchestrator(orch);
+        }
+
+        setConfigChecked(true);
+        return;
+      }
+
+      setConfigChecked(true);
+    })();
+
+    return () => controller.abort();
+  }, [i18n, samiLanguage, serverConfig]);
+
+  useEffect(() => {
+    // Do not auto-configure from localStorage if a server key is present or while the server probe is pending.
+    if (serverConfig || !configChecked) return;
+
     try {
       if (typeof window !== 'undefined') {
         const storedGemini = localStorage.getItem('sami_chat_gemini_key') || '';
@@ -112,7 +177,7 @@ function App() {
     } catch (e) {
       // ignore storage access errors
     }
-  }, [handleConfigured, i18n, samiLanguage]);
+  }, [configChecked, handleConfigured, i18n, samiLanguage, serverConfig]);
 
   const handleSendMessage = async (message: string, preserveFormatting?: boolean): Promise<string> => {
     console.log('[App] handleSendMessage called with message:', message.substring(0, 50));
@@ -136,22 +201,22 @@ function App() {
   const handleNewConversation = useCallback(() => {
     if (!orchestrator) return;
 
-    // Clear current session but keep API keys in localStorage
     orchestrator.clearSession();
 
-    // Create a new session with the same default provider logic
-    const storedGemini = localStorage.getItem('sami_chat_gemini_key') || '';
-    const storedOpenai = localStorage.getItem('sami_chat_openai_key') || '';
-
-    let initialProvider: AIProvider = 'gemini';
-    if (!storedGemini.trim() && storedOpenai.trim()) {
-      initialProvider = 'chatgpt';
+    const available = orchestrator.getAvailableProviders();
+    if (available.length === 0) {
+      console.warn('[App] No available providers to start a new conversation');
+      return;
     }
 
+    const initialProvider: AIProvider = available.includes('gemini') ? 'gemini' : available[0];
     orchestrator.createSession(initialProvider);
-    // Force re-render by recreating the orchestrator object in state
     setOrchestrator(orchestrator);
   }, [orchestrator]);
+
+  if (!configChecked && !orchestrator) {
+    return <div style={{ padding: 24, textAlign: 'center' }}>Checking server configuration...</div>;
+  }
 
   if (!orchestrator) {
     return (
