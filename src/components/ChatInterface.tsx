@@ -194,8 +194,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: sanitizePlaceholders(buffered) } : m));
           },
           onDone: (finalText: string) => {
-            buffered = finalText;
-            setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: sanitizePlaceholders(finalText) } : m));
+            // If finalText is empty, it means streaming completed without re-translation (incremental mode)
+            // Keep the buffered content that was accumulated from partials
+            if (finalText && finalText.trim().length > 0) {
+              buffered = finalText;
+              setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: sanitizePlaceholders(finalText) } : m));
+            }
+            // Otherwise, buffered content from onPartial calls is already in the UI - no update needed
           },
           onError: (err: Error) => {
             const errorMessage: DisplayMessage = {

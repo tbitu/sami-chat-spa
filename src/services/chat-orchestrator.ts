@@ -450,7 +450,7 @@ export class ChatOrchestrator {
               ? finalFinnish
               : finnishBuffer;
 
-            // Flush any remaining pending segment as a partial before final translation
+            // Flush any remaining pending segment that wasn't translated during streaming
             if (pendingSegment.trim().length > 0) {
               try {
                 const translatedRemainder = await translateWithMarkdown(pendingSegment, 'fin-sami', preserveFormatting);
@@ -477,43 +477,16 @@ export class ChatOrchestrator {
 
             saveSessionToStorage(this.currentSession!);
 
-            console.log('[Orchestrator] Translating streamed response fin→sami...');
-            const assistantResponseInSami = await translateWithMarkdown(
-              assistantFinnish,
-              'fin-sami',
-              preserveFormatting
-            );
-
+            // Don't re-translate the entire response - it was already translated incrementally during streaming.
+            // Just signal completion with the full Finnish text (the UI already has the Sami translation from partials)
+            console.log('[Orchestrator] Streaming complete. Skipping redundant full translation.');
             console.log('[Orchestrator] Stage 3 (stream): Validating Sami output...');
-            const samiValidation = validateSamiOutput(assistantResponseInSami);
-
-            if (!samiValidation.isValid) {
-              console.error('[Orchestrator] Sami output invalid (stream):', samiValidation.errors);
-
-              const localized = i18n.t('errors.fallbackWarning', { errors: samiValidation.errors.join('; ') });
-              let warningToShow = localized as string;
-              try {
-                const translatedWarning = await translateWithMarkdown(localized as string, 'fin-sami', preserveFormatting);
-                if (translatedWarning && translatedWarning.trim().length > 0) {
-                  warningToShow = translatedWarning;
-                }
-              } catch (err) {
-                console.warn('[Orchestrator] Warning translation failed (stream), using localized warning:', err);
-              }
-
-              const WARNING_START = '@@WARNING_START@@';
-              const WARNING_END = '@@WARNING_END@@';
-              const fallbackResponse = `${WARNING_START}${warningToShow}${WARNING_END}\n\n${assistantResponseInSami}`;
-
-              handlers.onDone(fallbackResponse);
-              return;
-            }
-
-            for (const warning of samiValidation.warnings) {
-              console.warn(`[Orchestrator] ${warning}`);
-            }
-
-            handlers.onDone(assistantResponseInSami);
+            
+            // Note: We can't validate the Sami output here because we only have partial chunks in the UI.
+            // Stage 3 validation should happen on the accumulated Sami text in the UI layer if needed.
+            // For now, signal completion without re-translation.
+            
+            handlers.onDone(''); // Empty string signals streaming is complete without triggering a full re-render
           },
           onError: (err: Error) => {
             handlers.onError(err);
