@@ -431,7 +431,7 @@ export class ChatOrchestrator {
       }
       
       isFlushingBlock = true;
-      const blockText = structuredBuffer.join('\n');
+      const linesToTranslate = [...structuredBuffer];
       const blockType = inStructuredBlock;
       
       // Clear immediately to prevent re-entrance
@@ -439,9 +439,26 @@ export class ChatOrchestrator {
       inStructuredBlock = null;
       
       try {
-        console.log(`[Orchestrator] Flushing ${blockType} block (${blockText.split('\n').length} lines)`);
-        const translated = await translateWithMarkdown(blockText, 'fin-sami', preserveFormatting);
-        handlers.onPartial(translated + '\n');
+        console.log(`[Orchestrator] Flushing ${blockType} block (${linesToTranslate.length} lines)`);
+        
+        // For lists: translate each item individually to avoid pipe separator corruption
+        // For code/tables: translate as a single block to preserve structure
+        if (blockType === 'list') {
+          for (const line of linesToTranslate) {
+            try {
+              const translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+              handlers.onPartial(translated + '\n');
+            } catch (err) {
+              console.warn(`[Orchestrator] List item translation failed:`, err);
+              handlers.onPartial(line + '\n'); // fallback to original
+            }
+          }
+        } else {
+          // Code blocks and tables: translate as single block
+          const blockText = linesToTranslate.join('\n');
+          const translated = await translateWithMarkdown(blockText, 'fin-sami', preserveFormatting);
+          handlers.onPartial(translated + '\n');
+        }
       } catch (err) {
         console.warn(`[Orchestrator] ${blockType} block translation failed:`, err);
       } finally {
