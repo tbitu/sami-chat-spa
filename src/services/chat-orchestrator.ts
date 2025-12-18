@@ -447,26 +447,72 @@ export class ChatOrchestrator {
         if (blockType === 'list') {
           for (const line of linesToTranslate) {
             try {
-              let translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+              // Split very long list items (>200 chars) into sentences to avoid API corruption
+              const MAX_LIST_ITEM_LENGTH = 200;
+              let translated: string;
               
-              // Check for artifacts in list items
-              const artifactCheck = detectTranslationArtifacts(translated);
-              if (!artifactCheck.isValid) {
-                console.warn(`[Orchestrator] Artifact in list item:`, artifactCheck.errors);
-                console.warn(`[Orchestrator] Retrying list item:`, line);
+              if (line.length > MAX_LIST_ITEM_LENGTH) {
+                console.log(`[Orchestrator] List item too long (${line.length} chars), splitting into sentences`);
                 
-                try {
-                  await new Promise(resolve => setTimeout(resolve, 300));
-                  translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                // Split by sentence boundaries (. ! ?) while preserving the list marker
+                const listMarkerMatch = line.match(/^(\s*(?:\d+\.|[-*+]|\[[ xX]\])\s*)/);
+                const marker = listMarkerMatch ? listMarkerMatch[0] : '';
+                const content = line.substring(marker.length);
+                
+                // Split into sentences
+                const sentences = content.split(/([.!?]\s+)/).filter(s => s.trim().length > 0);
+                const translatedParts: string[] = [];
+                
+                // Translate first part with marker
+                if (sentences.length > 0) {
+                  const firstPart = marker + sentences[0] + (sentences[1] || '');
+                  let firstTranslated = await translateWithMarkdown(firstPart, 'fin-sami', preserveFormatting);
                   
-                  const retryCheck = detectTranslationArtifacts(translated);
-                  if (!retryCheck.isValid) {
-                    console.error('[Orchestrator] List item retry corrupted, using Finnish');
+                  const artifactCheck1 = detectTranslationArtifacts(firstTranslated);
+                  if (!artifactCheck1.isValid) {
+                    console.warn('[Orchestrator] Artifact in first sentence, using Finnish');
+                    firstTranslated = firstPart;
+                  }
+                  translatedParts.push(firstTranslated);
+                  
+                  // Translate remaining sentences
+                  for (let i = 2; i < sentences.length; i += 2) {
+                    const sentence = sentences[i] + (sentences[i + 1] || '');
+                    let sentenceTranslated = await translateWithMarkdown(sentence, 'fin-sami', preserveFormatting);
+                    
+                    const artifactCheck = detectTranslationArtifacts(sentenceTranslated);
+                    if (!artifactCheck.isValid) {
+                      console.warn('[Orchestrator] Artifact in sentence, using Finnish');
+                      sentenceTranslated = sentence;
+                    }
+                    translatedParts.push(' ' + sentenceTranslated);
+                  }
+                }
+                
+                translated = translatedParts.join('');
+              } else {
+                // Normal length - translate as one unit
+                translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                
+                // Check for artifacts in list items
+                const artifactCheck = detectTranslationArtifacts(translated);
+                if (!artifactCheck.isValid) {
+                  console.warn(`[Orchestrator] Artifact in list item:`, artifactCheck.errors);
+                  console.warn(`[Orchestrator] Retrying list item:`, line);
+                  
+                  try {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                    
+                    const retryCheck = detectTranslationArtifacts(translated);
+                    if (!retryCheck.isValid) {
+                      console.error('[Orchestrator] List item retry corrupted, using Finnish');
+                      translated = line;
+                    }
+                  } catch (retryErr) {
+                    console.error('[Orchestrator] List item retry failed:', retryErr);
                     translated = line;
                   }
-                } catch (retryErr) {
-                  console.error('[Orchestrator] List item retry failed:', retryErr);
-                  translated = line;
                 }
               }
               
@@ -608,19 +654,21 @@ export class ChatOrchestrator {
                     const retryCheck = detectTranslationArtifacts(translated);
                     if (!retryCheck.isValid) {
                       console.error('[Orchestrator] Retry still corrupted, using original Finnish:', line);
-                      translated = line; // Fallback to Finnish
+                      // Add space before Finnish fallback to prevent concatenation with previous Sami text
+                      translated = ' ' + line;
                     } else {
                       console.log('[Orchestrator] Retry successful');
                     }
                   } catch (retryErr) {
                     console.error('[Orchestrator] Retry failed:', retryErr);
-                    translated = line; // Fallback
+                    translated = ' ' + line; // Fallback with space
                   }
                 }
                 
                 handlers.onPartial(translated + '\n');
               } catch (err) {
                 console.warn('[Orchestrator] Line translation failed:', err);
+                handlers.onPartial(' ' + line + '\n'); // Fallback with space
               }
             }
           },
