@@ -415,11 +415,27 @@ export class ChatOrchestrator {
 
     let finnishBuffer = '';
     let pendingLines = '';
+    let structuredBuffer: string[] = []; // Buffer for lists/tables/code blocks
+    let inStructuredBlock: 'list' | 'table' | 'code' | null = null;
 
-    // Helper to check if we're in the middle of a structured block (list, table)
+    // Helper to check line types
     const isListStart = (line: string) => /^\s*(\d+\.|[-*+]|\[[ xX]\])\s/.test(line);
     const isTableRow = (line: string) => line.trim().startsWith('|') && line.trim().endsWith('|');
     const isCodeBlockMarker = (line: string) => /^\s*```/.test(line) || /^\s*~~~/.test(line);
+
+    const flushStructuredBlock = async () => {
+      if (structuredBuffer.length > 0) {
+        const blockText = structuredBuffer.join('\n');
+        try {
+          const translated = await translateWithMarkdown(blockText, 'fin-sami', preserveFormatting);
+          handlers.onPartial(translated + '\n');
+        } catch (err) {
+          console.warn(`[Orchestrator] ${inStructuredBlock} block translation failed:`, err);
+        }
+        structuredBuffer = [];
+        inStructuredBlock = null;
+      }
+    };
 
     try {
       await service.streamMessage(
@@ -431,95 +447,90 @@ export class ChatOrchestrator {
             pendingLines += chunk;
 
             const lines = pendingLines.split('\n');
-            
-            // Keep the last incomplete line in the buffer
             pendingLines = lines.pop() || '';
 
-            if (lines.length === 0) return;
-
-            let i = 0;
-            while (i < lines.length) {
-              const currentLine = lines[i];
-
-              // Empty lines - send immediately to preserve spacing
-              if (currentLine.trim() === '') {
+            for (const line of lines) {
+              // Empty line - flush any structured block and send the empty line
+              if (line.trim() === '') {
+                await flushStructuredBlock();
                 handlers.onPartial('\n');
-                i++;
                 continue;
               }
 
-              // Code block - collect until closing marker
-              if (isCodeBlockMarker(currentLine)) {
-                const codeBlock: string[] = [currentLine];
-                i++;
-                while (i < lines.length && !isCodeBlockMarker(lines[i])) {
-                  codeBlock.push(lines[i]);
-                  i++;
-                }
-                if (i < lines.length) {
-                  codeBlock.push(lines[i]); // closing marker
-                  i++;
-                }
-                const blockText = codeBlock.join('\n');
-                try {
-                  const translated = await translateWithMarkdown(blockText, 'fin-sami', preserveFormatting);
-                  handlers.onPartial(translated + '\n');
-                } catch (err) {
-                  console.warn('[Orchestrator] Code block translation failed:', err);
+              // Code block markers
+              if (isCodeBlockMarker(line)) {
+                if (inStructuredBlock === 'code') {
+                  // Closing code block
+                  structuredBuffer.push(line);
+                  await flushStructuredBlock();
+                } else {
+                  // Opening code block - flush any other block first
+                  await flushStructuredBlock();
+                  structuredBuffer = [line];
+                  inStructuredBlock = 'code';
                 }
                 continue;
               }
 
-              // Table - collect all consecutive table rows
-              if (isTableRow(currentLine)) {
-                const tableRows: string[] = [currentLine];
-                i++;
-                while (i < lines.length && isTableRow(lines[i])) {
-                  tableRows.push(lines[i]);
-                  i++;
-                }
-                const tableText = tableRows.join('\n');
-                try {
-                  const translated = await translateWithMarkdown(tableText, 'fin-sami', preserveFormatting);
-                  handlers.onPartial(translated + '\n');
-                } catch (err) {
-                  console.warn('[Orchestrator] Table translation failed:', err);
-                }
+              // Inside code block - just accumulate
+              if (inStructuredBlock === 'code') {
+                structuredBuffer.push(line);
                 continue;
               }
 
-              // List - collect all consecutive list items
-              if (isListStart(currentLine)) {
-                const listItems: string[] = [currentLine];
-                i++;
-                while (i < lines.length && (isListStart(lines[i]) || (lines[i].trim() !== '' && !isListStart(lines[i]) && /^\s{2,}/.test(lines[i])))) {
-                  listItems.push(lines[i]);
-                  i++;
-                }
-                const listText = listItems.join('\n');
-                try {
-                  const translated = await translateWithMarkdown(listText, 'fin-sami', preserveFormatting);
-                  handlers.onPartial(translated + '\n');
-                } catch (err) {
-                  console.warn('[Orchestrator] List translation failed:', err);
+              // Table row
+              if (isTableRow(line)) {
+                if (inStructuredBlock === 'table') {
+                  structuredBuffer.push(line);
+                } else {
+                  await flushStructuredBlock();
+                  structuredBuffer = [line];
+                  inStructuredBlock = 'table';
                 }
                 continue;
+              } else if (inStructuredBlock === 'table') {
+                // End of table
+                await flushStructuredBlock();
               }
 
-              // Regular line - translate and send
+              // List item
+              if (isListStart(line)) {
+                if (inStructuredBlock === 'list') {
+                  structuredBuffer.push(line);
+                } else {
+                  await flushStructuredBlock();
+                  structuredBuffer = [line];
+                  inStructuredBlock = 'list';
+                }
+                continue;
+              } else if (inStructuredBlock === 'list') {
+                // Check if it's a continuation (indented) or end of list
+                if (/^\s{2,}/.test(line)) {
+                  structuredBuffer.push(line);
+                  continue;
+                } else {
+                  // End of list - flush it
+                  await flushStructuredBlock();
+                }
+              }
+
+              // Regular line - flush any block and translate
+              await flushStructuredBlock();
               try {
-                const translated = await translateWithMarkdown(currentLine, 'fin-sami', preserveFormatting);
+                const translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
                 handlers.onPartial(translated + '\n');
               } catch (err) {
                 console.warn('[Orchestrator] Line translation failed:', err);
               }
-              i++;
             }
           },
           onDone: async (finalFinnish: string) => {
             const assistantFinnish = (finalFinnish && finalFinnish.trim().length > 0)
               ? finalFinnish
               : finnishBuffer;
+
+            // Flush any remaining structured block
+            await flushStructuredBlock();
 
             // Translate any remaining incomplete line
             if (pendingLines.trim().length > 0) {
@@ -548,11 +559,11 @@ export class ChatOrchestrator {
 
             saveSessionToStorage(this.currentSession!);
 
-            // Signal completion - onPartial calls already sent translated content
+            // Signal completion
             console.log('[Orchestrator] Streaming translation complete');
             console.log('[Orchestrator] Stage 3 (stream): Sami output validation skipped (done incrementally)');
             
-            handlers.onDone(''); // Empty to signal completion without overwriting partial updates
+            handlers.onDone('');
           },
           onError: (err: Error) => {
             handlers.onError(err);
