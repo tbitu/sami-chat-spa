@@ -419,11 +419,17 @@ export class ChatOrchestrator {
     let pendingLines = '';
     let structuredBuffer: string[] = []; // Buffer for lists/tables/code blocks
     let inStructuredBlock: 'list' | 'table' | 'code' | null = null;
+    let currentListType: 'numbered' | 'bullet' | null = null; // Track list marker type
     let pendingTranslations = 0; // Track ongoing translation work
     let llmDone = false; // Track if LLM has finished streaming
 
     // Helper to check line types
     const isListStart = (line: string) => /^\s*(\d+\.|[-*+]|\[[ xX]\])\s/.test(line);
+    const getListType = (line: string): 'numbered' | 'bullet' | null => {
+      if (/^\s*\d+\./.test(line)) return 'numbered';
+      if (/^\s*[-*+]/.test(line)) return 'bullet';
+      return null;
+    };
     const isTableRow = (line: string) => line.trim().startsWith('|') && line.trim().endsWith('|');
     const isCodeBlockMarker = (line: string) => /^\s*```/.test(line) || /^\s*~~~/.test(line);
 
@@ -449,6 +455,7 @@ export class ChatOrchestrator {
       // Clear immediately to prevent re-entrance
       structuredBuffer = [];
       inStructuredBlock = null;
+      currentListType = null;
       
       try {
         console.log(`[Orchestrator] Flushing ${blockType} block (${linesToTranslate.length} lines)`);
@@ -701,12 +708,16 @@ export class ChatOrchestrator {
 
               // List item
               if (isListStart(line)) {
-                if (inStructuredBlock === 'list') {
+                const lineListType = getListType(line);
+                if (inStructuredBlock === 'list' && currentListType === lineListType) {
+                  // Same list type, add to buffer
                   structuredBuffer.push(line);
                 } else {
+                  // Different list type or starting new list, flush previous
                   await flushStructuredBlock();
                   structuredBuffer = [line];
                   inStructuredBlock = 'list';
+                  currentListType = lineListType;
                 }
                 continue;
               } else if (inStructuredBlock === 'list') {
