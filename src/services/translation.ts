@@ -125,8 +125,9 @@ function getSamiLanguage(): string {
 
 /**
  * Translate text using TartuNLP API with timeout and retry logic
+ * Exported for use in retry scenarios where markdown processing should be avoided
  */
-async function translateText(
+export async function translateText(
   text: string,
   direction: TranslationDirection,
   retryCount: number = 0

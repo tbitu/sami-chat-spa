@@ -4,7 +4,7 @@ import { sanitizePlaceholders } from '../utils/markdown';
 import { normalizeTranslatedSpacing } from '../utils/markdown';
 import { GeminiService } from './gemini';
 import { ChatGPTService } from './chatgpt';
-import { translateWithMarkdown } from './translation';
+import { translateWithMarkdown, translateText } from './translation';
 import {
   detectLanguage,
   shouldTranslate,
@@ -484,8 +484,25 @@ export class ChatOrchestrator {
                   
                   const artifactCheck1 = detectTranslationArtifacts(firstTranslated);
                   if (!artifactCheck1.isValid) {
-                    console.warn('[Orchestrator] Artifact in first sentence, using Finnish');
-                    firstTranslated = firstPart;
+                    console.warn('[Orchestrator] Artifact in first sentence, retrying whole line with plain translation');
+                    // Retry whole line with plain translation (no markdown processing)
+                    try {
+                      await new Promise(resolve => setTimeout(resolve, 300));
+                      translated = await translateText(line, 'fin-sami');
+                      translated = normalizeTranslatedSpacing(translated);
+                      const retryCheck = detectTranslationArtifacts(translated);
+                      if (!retryCheck.isValid) {
+                        console.error('[Orchestrator] Plain retry corrupted, using Finnish');
+                        translated = line;
+                      }
+                      handlers.onPartial(translated + '\n');
+                      continue; // Skip rest of splitting logic
+                    } catch (retryErr) {
+                      console.error('[Orchestrator] Retry failed:', retryErr);
+                      translated = line;
+                      handlers.onPartial(translated + '\n');
+                      continue;
+                    }
                   }
                   translatedParts.push(firstTranslated);
                   
@@ -505,6 +522,8 @@ export class ChatOrchestrator {
                   
                   // Join with space
                   translated = translatedParts.join(' ');
+                  handlers.onPartial(translated + '\n');
+                  continue; // Skip to next line
                 }
               } else {
                 // Normal length - translate as one unit
@@ -515,17 +534,20 @@ export class ChatOrchestrator {
                 const artifactCheck = detectTranslationArtifacts(translated);
                 if (!artifactCheck.isValid) {
                   console.warn(`[Orchestrator] Artifact in list item:`, artifactCheck.errors);
-                  console.warn(`[Orchestrator] Retrying list item:`, line);
+                  console.warn(`[Orchestrator] Retrying list item with plain translation:`, line);
                   
                   try {
                     await new Promise(resolve => setTimeout(resolve, 300));
-                    translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                    // Use plain translateText to preserve list markers
+                    translated = await translateText(line, 'fin-sami');
                     translated = normalizeTranslatedSpacing(translated);
                     
                     const retryCheck = detectTranslationArtifacts(translated);
                     if (!retryCheck.isValid) {
-                      console.error('[Orchestrator] List item retry corrupted, using Finnish');
+                      console.error('[Orchestrator] List item plain retry corrupted, using Finnish');
                       translated = line;
+                    } else {
+                      console.log('[Orchestrator] Plain retry successful');
                     }
                   } catch (retryErr) {
                     console.error('[Orchestrator] List item retry failed:', retryErr);
