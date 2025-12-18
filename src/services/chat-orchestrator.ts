@@ -415,10 +415,10 @@ export class ChatOrchestrator {
 
     let finnishBuffer = '';
     let pendingSegment = '';
-    // Match sentence endings (.!?) with optional whitespace OR sequences of newlines
-    // Prioritize double newlines (paragraph breaks) over single newlines
+    // Patterns for detecting list items and structural breaks
     const PARAGRAPH_BREAK = /\n\n+/;
-    const SENTENCE_OR_LINE_ENDING = /([.!?]\s+|\n)/;
+    const LIST_ITEM_END = /\n(?=\d+\.\s|\*\s|-\s)/; // Newline before numbered/bullet list marker
+    const SENTENCE_OR_LINE_ENDING = /([.!?](?=\s+[A-ZČĐŊŠŦŽÄÖÅ])|[.!?]\s*\n)/; // Period before capital or before newline
     const MIN_CHUNK_LENGTH = 40; // Minimum characters before attempting translation
 
     try {
@@ -430,41 +430,57 @@ export class ChatOrchestrator {
             finnishBuffer += chunk;
             pendingSegment += chunk;
 
-            // First check for paragraph breaks (double newlines) - these should always trigger translation
+            // Priority 1: Paragraph breaks (double newlines) - always trigger translation
             const paragraphMatch = pendingSegment.match(PARAGRAPH_BREAK);
             if (paragraphMatch) {
               const endIndex = paragraphMatch.index! + paragraphMatch[0].length;
               const complete = pendingSegment.substring(0, paragraphMatch.index!);
-              const separator = paragraphMatch[0]; // Preserve the paragraph break
+              const separator = paragraphMatch[0];
               pendingSegment = pendingSegment.substring(endIndex);
               
               if (complete.trim().length > 0) {
                 try {
                   const translatedChunk = await translateWithMarkdown(complete, 'fin-sami', preserveFormatting);
-                  // Re-add the paragraph break after translation
                   handlers.onPartial(translatedChunk + separator);
                 } catch (err) {
                   console.warn('[Orchestrator] Partial translation (paragraph) failed, skipping chunk:', err);
                 }
               }
-              return; // Continue processing remaining buffer
+              return;
             }
 
-            // Otherwise, check for sentence endings or single newlines (but only if we have enough content)
-            const match = pendingSegment.match(SENTENCE_OR_LINE_ENDING);
-            if (match && pendingSegment.length >= MIN_CHUNK_LENGTH) {
-              const endIndex = match.index! + match[0].length;
-              const complete = pendingSegment.substring(0, match.index!);
-              const separator = match[0]; // Capture the separator
+            // Priority 2: List item boundaries - keep entire list items together
+            const listMatch = pendingSegment.match(LIST_ITEM_END);
+            if (listMatch && pendingSegment.length >= MIN_CHUNK_LENGTH) {
+              const endIndex = listMatch.index! + listMatch[0].length;
+              const complete = pendingSegment.substring(0, listMatch.index!);
+              const separator = listMatch[0]; // The newline before next list item
               pendingSegment = pendingSegment.substring(endIndex);
               
               if (complete.trim().length > 0) {
                 try {
                   const translatedChunk = await translateWithMarkdown(complete, 'fin-sami', preserveFormatting);
-                  // Re-add the captured separator (space, newline, etc.) after translation
                   handlers.onPartial(translatedChunk + separator);
                 } catch (err) {
-                  console.warn('[Orchestrator] Partial translation (sentence batch) failed, skipping chunk:', err);
+                  console.warn('[Orchestrator] Partial translation (list item) failed, skipping chunk:', err);
+                }
+              }
+              return;
+            }
+
+            // Priority 3: Sentence endings (but avoid breaking within list items)
+            const sentenceMatch = pendingSegment.match(SENTENCE_OR_LINE_ENDING);
+            if (sentenceMatch && pendingSegment.length >= MIN_CHUNK_LENGTH) {
+              const endIndex = sentenceMatch.index! + sentenceMatch[0].length;
+              const complete = pendingSegment.substring(0, endIndex);
+              pendingSegment = pendingSegment.substring(endIndex);
+              
+              if (complete.trim().length > 0) {
+                try {
+                  const translatedChunk = await translateWithMarkdown(complete, 'fin-sami', preserveFormatting);
+                  handlers.onPartial(translatedChunk);
+                } catch (err) {
+                  console.warn('[Orchestrator] Partial translation (sentence) failed, skipping chunk:', err);
                 }
               }
             }
