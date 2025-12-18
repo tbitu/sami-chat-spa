@@ -9,6 +9,7 @@ import {
   shouldTranslate,
   validateFinnishOutput,
   validateSamiOutput,
+  detectTranslationArtifacts,
 } from '../utils/language-detection';
 import i18n from '../i18n';
 
@@ -446,7 +447,29 @@ export class ChatOrchestrator {
         if (blockType === 'list') {
           for (const line of linesToTranslate) {
             try {
-              const translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+              let translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+              
+              // Check for artifacts in list items
+              const artifactCheck = detectTranslationArtifacts(translated);
+              if (!artifactCheck.isValid) {
+                console.warn(`[Orchestrator] Artifact in list item:`, artifactCheck.errors);
+                console.warn(`[Orchestrator] Retrying list item:`, line);
+                
+                try {
+                  await new Promise(resolve => setTimeout(resolve, 300));
+                  translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                  
+                  const retryCheck = detectTranslationArtifacts(translated);
+                  if (!retryCheck.isValid) {
+                    console.error('[Orchestrator] List item retry corrupted, using Finnish');
+                    translated = line;
+                  }
+                } catch (retryErr) {
+                  console.error('[Orchestrator] List item retry failed:', retryErr);
+                  translated = line;
+                }
+              }
+              
               handlers.onPartial(translated + '\n');
             } catch (err) {
               console.warn(`[Orchestrator] List item translation failed:`, err);
@@ -456,7 +479,29 @@ export class ChatOrchestrator {
         } else {
           // Code blocks and tables: translate as single block
           const blockText = linesToTranslate.join('\n');
-          const translated = await translateWithMarkdown(blockText, 'fin-sami', preserveFormatting);
+          let translated = await translateWithMarkdown(blockText, 'fin-sami', preserveFormatting);
+          
+          // Check for artifacts in blocks
+          const artifactCheck = detectTranslationArtifacts(translated);
+          if (!artifactCheck.isValid) {
+            console.warn(`[Orchestrator] Artifact in ${blockType} block:`, artifactCheck.errors);
+            console.warn(`[Orchestrator] Retrying ${blockType} block (${linesToTranslate.length} lines)`);
+            
+            try {
+              await new Promise(resolve => setTimeout(resolve, 300));
+              translated = await translateWithMarkdown(blockText, 'fin-sami', preserveFormatting);
+              
+              const retryCheck = detectTranslationArtifacts(translated);
+              if (!retryCheck.isValid) {
+                console.error(`[Orchestrator] ${blockType} block retry corrupted, using Finnish`);
+                translated = blockText;
+              }
+            } catch (retryErr) {
+              console.error(`[Orchestrator] ${blockType} block retry failed:`, retryErr);
+              translated = blockText;
+            }
+          }
+          
           handlers.onPartial(translated + '\n');
         }
       } catch (err) {
@@ -546,7 +591,33 @@ export class ChatOrchestrator {
               // Regular line - flush any block and translate
               await flushStructuredBlock();
               try {
-                const translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                let translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                
+                // Check for artifacts and retry if needed
+                const artifactCheck = detectTranslationArtifacts(translated);
+                if (!artifactCheck.isValid) {
+                  console.warn('[Orchestrator] Artifact detected in streaming line:', artifactCheck.errors);
+                  console.warn('[Orchestrator] Retrying translation for line:', line);
+                  
+                  // Retry once
+                  try {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                    
+                    // Check again
+                    const retryCheck = detectTranslationArtifacts(translated);
+                    if (!retryCheck.isValid) {
+                      console.error('[Orchestrator] Retry still corrupted, using original Finnish:', line);
+                      translated = line; // Fallback to Finnish
+                    } else {
+                      console.log('[Orchestrator] Retry successful');
+                    }
+                  } catch (retryErr) {
+                    console.error('[Orchestrator] Retry failed:', retryErr);
+                    translated = line; // Fallback
+                  }
+                }
+                
                 handlers.onPartial(translated + '\n');
               } catch (err) {
                 console.warn('[Orchestrator] Line translation failed:', err);
@@ -564,7 +635,29 @@ export class ChatOrchestrator {
             // Translate any remaining incomplete line
             if (pendingLines.trim().length > 0) {
               try {
-                const translated = await translateWithMarkdown(pendingLines, 'fin-sami', preserveFormatting);
+                let translated = await translateWithMarkdown(pendingLines, 'fin-sami', preserveFormatting);
+                
+                // Check for artifacts
+                const artifactCheck = detectTranslationArtifacts(translated);
+                if (!artifactCheck.isValid) {
+                  console.warn('[Orchestrator] Artifact in final line:', artifactCheck.errors);
+                  console.warn('[Orchestrator] Retrying final line:', pendingLines);
+                  
+                  try {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    translated = await translateWithMarkdown(pendingLines, 'fin-sami', preserveFormatting);
+                    
+                    const retryCheck = detectTranslationArtifacts(translated);
+                    if (!retryCheck.isValid) {
+                      console.error('[Orchestrator] Final line retry corrupted, using Finnish');
+                      translated = pendingLines;
+                    }
+                  } catch (retryErr) {
+                    console.error('[Orchestrator] Final line retry failed:', retryErr);
+                    translated = pendingLines;
+                  }
+                }
+                
                 handlers.onPartial(translated);
               } catch (err) {
                 console.warn('[Orchestrator] Final line translation failed:', err);
