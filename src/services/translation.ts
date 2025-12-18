@@ -51,6 +51,7 @@ const PUBLIC_TARTUNLP_API = 'https://api.tartunlp.ai/translation/v2';
 const MAX_RETRIES = 3; // Retry up to 3 times for transient errors
 const CLIENT_TIMEOUT_MS = 25000; // Abort fetch after 25s on the client side
 const MAX_UNITS_PER_BATCH = 10; // Limit pipe-joined units per request to reduce LLM drift
+const MAX_CONCURRENT_REQUESTS = 4; // Maximum parallel translation requests
 
 export type TranslationDirection = 'sami-fin' | 'fin-sami';
 
@@ -660,3 +661,173 @@ export async function batchTranslate(
   
   return results;
 }
+
+/**
+ * Request tracking for parallel translation with order preservation
+ */
+interface TranslationRequest {
+  id: number;
+  text: string;
+  direction: TranslationDirection;
+  preserveFormatting?: boolean;
+}
+
+interface TranslationResult {
+  id: number;
+  result: string;
+  error?: Error;
+}
+
+/**
+ * Parallel translation queue with order preservation
+ * Processes up to MAX_CONCURRENT_REQUESTS simultaneously while maintaining order
+ */
+export class ParallelTranslationQueue {
+  private requestId = 0;
+  private activeRequests = 0;
+  private queue: Array<{
+    request: TranslationRequest;
+    resolve: (result: string) => void;
+    reject: (error: Error) => void;
+  }> = [];
+  private results = new Map<number, TranslationResult>();
+  private onPartialCallback?: (id: number, text: string) => void;
+
+  /**
+   * Set callback for receiving partial results as they complete
+   * @param callback Function called when each request completes, in any order
+   */
+  onPartial(callback: (id: number, text: string) => void): void {
+    this.onPartialCallback = callback;
+  }
+
+  /**
+   * Add a translation request to the queue
+   * @returns Promise that resolves with the translated text
+   */
+  async enqueue(
+    text: string,
+    direction: TranslationDirection,
+    preserveFormatting: boolean = false
+  ): Promise<string> {
+    const id = this.requestId++;
+    const request: TranslationRequest = { id, text, direction, preserveFormatting };
+
+    return new Promise<string>((resolve, reject) => {
+      this.queue.push({ request, resolve, reject });
+      this.processQueue();
+    });
+  }
+
+  /**
+   * Wait for all pending requests to complete and return results in order
+   * @returns Array of translated texts in the order they were enqueued
+   */
+  async getAllInOrder(): Promise<string[]> {
+    // Wait for queue to drain
+    while (this.queue.length > 0 || this.activeRequests > 0) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // Sort results by ID and return in order
+    const sortedResults = Array.from(this.results.entries())
+      .sort(([idA], [idB]) => idA - idB)
+      .map(([, result]) => {
+        if (result.error) {
+          throw result.error;
+        }
+        return result.result;
+      });
+
+    // Clear results after retrieving
+    this.results.clear();
+    return sortedResults;
+  }
+
+  /**
+   * Get the number of pending requests
+   */
+  getPendingCount(): number {
+    return this.queue.length + this.activeRequests;
+  }
+
+  /**
+   * Clear all pending requests
+   */
+  clear(): void {
+    // Reject all pending requests
+    for (const item of this.queue) {
+      item.reject(new Error('Queue cleared'));
+    }
+    this.queue = [];
+    this.results.clear();
+    this.requestId = 0;
+  }
+
+  private async processQueue(): Promise<void> {
+    // Process queue items up to the concurrency limit
+    while (this.activeRequests < MAX_CONCURRENT_REQUESTS && this.queue.length > 0) {
+      const item = this.queue.shift();
+      if (!item) break;
+
+      this.activeRequests++;
+      
+      // Process request in background
+      this.processRequest(item.request)
+        .then(result => {
+          this.results.set(item.request.id, { id: item.request.id, result });
+          
+          // Notify partial callback if set
+          if (this.onPartialCallback) {
+            this.onPartialCallback(item.request.id, result);
+          }
+          
+          item.resolve(result);
+        })
+        .catch(error => {
+          this.results.set(item.request.id, { 
+            id: item.request.id, 
+            result: item.request.text, // Fallback to original
+            error 
+          });
+          item.reject(error);
+        })
+        .finally(() => {
+          this.activeRequests--;
+          this.processQueue(); // Process next items
+        });
+    }
+  }
+
+  private async processRequest(request: TranslationRequest): Promise<string> {
+    console.log(`[ParallelQueue] Processing request ${request.id}: ${request.text.length} chars, ${request.direction}`);
+    
+    if (request.preserveFormatting) {
+      return translateWithMarkdown(request.text, request.direction, true);
+    } else {
+      return translateText(request.text, request.direction);
+    }
+  }
+}
+
+/**
+ * Create a new parallel translation queue
+ * Usage example:
+ * 
+ * ```typescript
+ * const queue = createTranslationQueue();
+ * queue.onPartial((id, text) => console.log(`Request ${id} completed:`, text));
+ * 
+ * // Enqueue multiple requests
+ * queue.enqueue('Mun namma lea...', 'sami-fin');
+ * queue.enqueue('Buorre beaivi!', 'sami-fin');
+ * queue.enqueue('Giitu!', 'sami-fin');
+ * 
+ * // Wait for all in order
+ * const results = await queue.getAllInOrder();
+ * ```
+ */
+export function createTranslationQueue(): ParallelTranslationQueue {
+  return new ParallelTranslationQueue();
+}
+
