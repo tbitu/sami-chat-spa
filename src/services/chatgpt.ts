@@ -422,12 +422,12 @@ export class ChatGPTService implements AIService {
           if (payload === '[DONE]') continue;
           try {
             const json = JSON.parse(payload) as {
-              choices?: { delta?: { content?: { text?: string }[] } }[];
+              choices?: { delta?: { content?: string } }[];
               message?: { content?: string };
               content?: string;
             };
             // Handle both OpenAI delta shape and proxy-wrapped content
-            const delta = json.choices?.[0]?.delta?.content?.[0]?.text || json.content || json.message?.content || '';
+            const delta = json.choices?.[0]?.delta?.content || json.content || json.message?.content || '';
             if (delta) fullText += delta;
           } catch (err) {
             console.warn('[ChatGPT] Failed to parse SSE chunk:', err);
@@ -439,11 +439,11 @@ export class ChatGPTService implements AIService {
     if (buffer.trim()) {
       try {
         const json = JSON.parse(buffer.replace(/^data:\s*/, '')) as {
-          choices?: { delta?: { content?: { text?: string }[] } }[];
+          choices?: { delta?: { content?: string } }[];
           message?: { content?: string };
           content?: string;
         };
-        const delta = json.choices?.[0]?.delta?.content?.[0]?.text || json.content || json.message?.content || '';
+        const delta = json.choices?.[0]?.delta?.content || json.content || json.message?.content || '';
         if (delta) fullText += delta;
       } catch {
         // ignore trailing parse issues
@@ -479,11 +479,11 @@ export class ChatGPTService implements AIService {
           if (payload === '[DONE]') continue;
           try {
             const json = JSON.parse(payload) as {
-              choices?: { delta?: { content?: { text?: string }[] } }[];
+              choices?: { delta?: { content?: string } }[];
               message?: { content?: string };
               content?: string;
             };
-            const delta = json.choices?.[0]?.delta?.content?.[0]?.text || json.content || json.message?.content || '';
+            const delta = json.choices?.[0]?.delta?.content || json.content || json.message?.content || '';
             if (delta) {
               fullText += delta;
               try {
@@ -502,11 +502,11 @@ export class ChatGPTService implements AIService {
     if (buffer.trim()) {
       try {
         const json = JSON.parse(buffer.replace(/^data:\s*/, '')) as {
-          choices?: { delta?: { content?: { text?: string }[] } }[];
+          choices?: { delta?: { content?: string } }[];
           message?: { content?: string };
           content?: string;
         };
-        const delta = json.choices?.[0]?.delta?.content?.[0]?.text || json.content || json.message?.content || '';
+        const delta = json.choices?.[0]?.delta?.content || json.content || json.message?.content || '';
         if (delta) {
           fullText += delta;
           try {

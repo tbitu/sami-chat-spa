@@ -415,6 +415,8 @@ export class ChatOrchestrator {
 
     let finnishBuffer = '';
     let pendingSegment = '';
+    const SENTENCE_ENDINGS = /([.!?]\s+|\n)/;
+    const MIN_CHUNK_LENGTH = 40; // Minimum characters before attempting translation
 
     try {
       await service.streamMessage(
@@ -425,18 +427,20 @@ export class ChatOrchestrator {
             finnishBuffer += chunk;
             pendingSegment += chunk;
 
-            // Translate completed lines (flush at newline boundaries) to reduce per-word translations
-            const lines = pendingSegment.split('\n');
-            // Keep the last (possibly incomplete) line in the buffer
-            if (lines.length > 1) {
-              const complete = lines.slice(0, -1).join('\n');
-              pendingSegment = lines[lines.length - 1] ?? '';
+            // Translate completed sentences or at paragraph breaks for smoother streaming
+            // Wait for sentence endings or newlines, and have enough content to translate
+            const match = pendingSegment.match(SENTENCE_ENDINGS);
+            if (match && pendingSegment.length >= MIN_CHUNK_LENGTH) {
+              const endIndex = match.index! + match[0].length;
+              const complete = pendingSegment.substring(0, endIndex);
+              pendingSegment = pendingSegment.substring(endIndex);
+              
               if (complete.trim().length > 0) {
                 try {
                   const translatedChunk = await translateWithMarkdown(complete, 'fin-sami', preserveFormatting);
-                  handlers.onPartial(translatedChunk + '\n');
+                  handlers.onPartial(translatedChunk);
                 } catch (err) {
-                  console.warn('[Orchestrator] Partial translation (line batch) failed, skipping chunk:', err);
+                  console.warn('[Orchestrator] Partial translation (sentence batch) failed, skipping chunk:', err);
                 }
               }
             }
