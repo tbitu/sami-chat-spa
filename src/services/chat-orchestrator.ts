@@ -534,24 +534,55 @@ export class ChatOrchestrator {
                 const artifactCheck = detectTranslationArtifacts(translated);
                 if (!artifactCheck.isValid) {
                   console.warn(`[Orchestrator] Artifact in list item:`, artifactCheck.errors);
-                  console.warn(`[Orchestrator] Retrying list item with plain translation:`, line);
+                  console.warn(`[Orchestrator] Retrying with plain translation (no markdown):`, line);
                   
                   try {
                     await new Promise(resolve => setTimeout(resolve, 300));
-                    // Use plain translateText to preserve list markers
-                    translated = await translateText(line, 'fin-sami');
-                    translated = normalizeTranslatedSpacing(translated);
+                    // Use plain translateText - this skips all markdown processing
+                    // and preserves list markers like "9. " in the output
+                    const plainTranslation = await translateText(line, 'fin-sami');
+                    const normalized = normalizeTranslatedSpacing(plainTranslation);
                     
-                    const retryCheck = detectTranslationArtifacts(translated);
+                    const retryCheck = detectTranslationArtifacts(normalized);
                     if (!retryCheck.isValid) {
-                      console.error('[Orchestrator] List item plain retry corrupted, using Finnish');
-                      translated = line;
+                      console.error('[Orchestrator] Plain retry also corrupted');
+                      console.warn('[Orchestrator] Attempting sentence-level split');
+                      
+                      // Last resort: split into smaller pieces
+                      const listMarkerMatch = line.match(/^(\\s*(?:\\d+\\.|[-*+]|\\[[ xX]\\])\\s*)/);
+                      const marker = listMarkerMatch ? listMarkerMatch[0] : '';
+                      const content = line.substring(marker.length);
+                      
+                      // Split on sentence boundaries
+                      const sentenceRegex = /(?<=[.!?])\\s+(?=[A-Z\u010c\u0110\u014a\u0160\u0166\u017d\u00c4\u00d6\u00d8\u00c5\u00c6])/;
+                      const sentences = content.split(sentenceRegex);
+                      
+                      if (sentences.length > 1) {
+                        console.log(`[Orchestrator] Translating ${sentences.length} sentences individually`);
+                        const parts: string[] = [marker];
+                        
+                        for (let i = 0; i < sentences.length; i++) {
+                          try {
+                            const sentTrans = await translateText(sentences[i], 'fin-sami');
+                            parts.push((i > 0 ? ' ' : '') + sentTrans);
+                          } catch {
+                            parts.push((i > 0 ? ' ' : '') + sentences[i]);
+                          }
+                        }
+                        
+                        translated = parts.join('');
+                      } else {
+                        // Can't split further - use Finnish
+                        console.error('[Orchestrator] Cannot split further, using Finnish');
+                        translated = line;
+                      }
                     } else {
                       console.log('[Orchestrator] Plain retry successful');
+                      translated = normalized;
                     }
                   } catch (retryErr) {
                     console.error('[Orchestrator] List item retry failed:', retryErr);
-                    translated = line;
+                    translated = line; // Fall back to Finnish with marker
                   }
                 }
               }
