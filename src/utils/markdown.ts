@@ -214,17 +214,22 @@ export function normalizeTranslatedSpacing(text: string): string {
   
   let result = text.trim();
   
-  // Ensure numbered lists have proper spacing: "text.2. Item" -> "text.\n2. Item"
-  // Match: non-whitespace followed by period/punctuation, then digit-dot-space pattern
-  result = result.replace(/([^\s])\.(\d+\.\s)/g, '$1.\n$2');
-  result = result.replace(/([^\s])([-*+]\s)/g, '$1\n$2');
+  // Fix list items concatenated with previous text
+  // Match: any char (not whitespace/newline) followed by digit-dot-space
+  result = result.replace(/([^\s\n])(\d+\.\s+[A-ZČĐŊŠŦŽÄÖØÅÆ])/g, '$1\n$2');
   
-  // Fix missing space before headings: "text# Heading" -> "text\n# Heading"  
-  result = result.replace(/([^\s\n])(#{1,6}\s)/g, '$1\n$2');
+  // Fix bullet points concatenated
+  result = result.replace(/([^\s\n])([-*+•]\s+[A-ZČĐŊŠŦŽÄÖØÅÆ])/g, '$1\n$2');
   
-  // Ensure space after sentence-ending punctuation before capitals
-  // "text.NextSentence" -> "text. NextSentence"
+  // Fix headers concatenated: "text# Header" or "textHeader text"
+  result = result.replace(/([^\s\n])(#{1,6}\s+)/g, '$1\n$2');
+  
+  // Fix missing space after sentence-ending punctuation before capital
   result = result.replace(/([.!?])([A-ZČĐŊŠŦŽÄÖØÅÆ])/g, '$1 $2');
+  
+  // Fix word-level concatenation after period: "word.nextword" -> "word. nextword"
+  // But preserve abbreviations and decimals
+  result = result.replace(/([a-zčđŋšŧž])\.([a-zčđŋšŧž])/g, '$1. $2');
   
   return result;
 }
