@@ -414,6 +414,12 @@ export class ChatOrchestrator {
     }
 
     let finnishBuffer = '';
+    let pendingLines = '';
+
+    // Helper to check if we're in the middle of a structured block (list, table)
+    const isListStart = (line: string) => /^\s*(\d+\.|[-*+]|\[[ xX]\])\s/.test(line);
+    const isTableRow = (line: string) => line.trim().startsWith('|') && line.trim().endsWith('|');
+    const isCodeBlockMarker = (line: string) => /^\s*```/.test(line) || /^\s*~~~/.test(line);
 
     try {
       await service.streamMessage(
@@ -422,13 +428,108 @@ export class ChatOrchestrator {
         {
           onPartial: async (chunk: string) => {
             finnishBuffer += chunk;
-            // Don't translate individual chunks during streaming - they may break markdown structure
-            // Just accumulate and let onDone handle the complete response with proper markdown preservation
+            pendingLines += chunk;
+
+            const lines = pendingLines.split('\n');
+            
+            // Keep the last incomplete line in the buffer
+            pendingLines = lines.pop() || '';
+
+            if (lines.length === 0) return;
+
+            let i = 0;
+            while (i < lines.length) {
+              const currentLine = lines[i];
+
+              // Empty lines - send immediately to preserve spacing
+              if (currentLine.trim() === '') {
+                handlers.onPartial('\n');
+                i++;
+                continue;
+              }
+
+              // Code block - collect until closing marker
+              if (isCodeBlockMarker(currentLine)) {
+                const codeBlock: string[] = [currentLine];
+                i++;
+                while (i < lines.length && !isCodeBlockMarker(lines[i])) {
+                  codeBlock.push(lines[i]);
+                  i++;
+                }
+                if (i < lines.length) {
+                  codeBlock.push(lines[i]); // closing marker
+                  i++;
+                }
+                const blockText = codeBlock.join('\n');
+                try {
+                  const translated = await translateWithMarkdown(blockText, 'fin-sami', preserveFormatting);
+                  handlers.onPartial(translated + '\n');
+                } catch (err) {
+                  console.warn('[Orchestrator] Code block translation failed:', err);
+                }
+                continue;
+              }
+
+              // Table - collect all consecutive table rows
+              if (isTableRow(currentLine)) {
+                const tableRows: string[] = [currentLine];
+                i++;
+                while (i < lines.length && isTableRow(lines[i])) {
+                  tableRows.push(lines[i]);
+                  i++;
+                }
+                const tableText = tableRows.join('\n');
+                try {
+                  const translated = await translateWithMarkdown(tableText, 'fin-sami', preserveFormatting);
+                  handlers.onPartial(translated + '\n');
+                } catch (err) {
+                  console.warn('[Orchestrator] Table translation failed:', err);
+                }
+                continue;
+              }
+
+              // List - collect all consecutive list items
+              if (isListStart(currentLine)) {
+                const listItems: string[] = [currentLine];
+                i++;
+                while (i < lines.length && (isListStart(lines[i]) || (lines[i].trim() !== '' && !isListStart(lines[i]) && /^\s{2,}/.test(lines[i])))) {
+                  listItems.push(lines[i]);
+                  i++;
+                }
+                const listText = listItems.join('\n');
+                try {
+                  const translated = await translateWithMarkdown(listText, 'fin-sami', preserveFormatting);
+                  handlers.onPartial(translated + '\n');
+                } catch (err) {
+                  console.warn('[Orchestrator] List translation failed:', err);
+                }
+                continue;
+              }
+
+              // Regular line - translate and send
+              try {
+                const translated = await translateWithMarkdown(currentLine, 'fin-sami', preserveFormatting);
+                handlers.onPartial(translated + '\n');
+              } catch (err) {
+                console.warn('[Orchestrator] Line translation failed:', err);
+              }
+              i++;
+            }
           },
           onDone: async (finalFinnish: string) => {
             const assistantFinnish = (finalFinnish && finalFinnish.trim().length > 0)
               ? finalFinnish
               : finnishBuffer;
+
+            // Translate any remaining incomplete line
+            if (pendingLines.trim().length > 0) {
+              try {
+                const translated = await translateWithMarkdown(pendingLines, 'fin-sami', preserveFormatting);
+                handlers.onPartial(translated);
+              } catch (err) {
+                console.warn('[Orchestrator] Final line translation failed:', err);
+              }
+            }
 
             const assistantMessage: Message = {
               role: 'assistant',
@@ -447,44 +548,11 @@ export class ChatOrchestrator {
 
             saveSessionToStorage(this.currentSession!);
 
-            // Translate the complete response with proper markdown preservation
-            console.log('[Orchestrator] Translating complete response fin→sami...');
-            const assistantResponseInSami = await translateWithMarkdown(
-              assistantFinnish,
-              'fin-sami',
-              preserveFormatting
-            );
-
-            console.log('[Orchestrator] Stage 3 (stream): Validating Sami output...');
-            const samiValidation = validateSamiOutput(assistantResponseInSami);
-
-            if (!samiValidation.isValid) {
-              console.error('[Orchestrator] Sami output invalid (stream):', samiValidation.errors);
-
-              const localized = i18n.t('errors.fallbackWarning', { errors: samiValidation.errors.join('; ') });
-              let warningToShow = localized as string;
-              try {
-                const translatedWarning = await translateWithMarkdown(localized as string, 'fin-sami', preserveFormatting);
-                if (translatedWarning && translatedWarning.trim().length > 0) {
-                  warningToShow = translatedWarning;
-                }
-              } catch (err) {
-                console.warn('[Orchestrator] Warning translation failed (stream), using localized warning:', err);
-              }
-
-              const WARNING_START = '@@WARNING_START@@';
-              const WARNING_END = '@@WARNING_END@@';
-              const fallbackResponse = `${WARNING_START}${warningToShow}${WARNING_END}\n\n${assistantResponseInSami}`;
-
-              handlers.onDone(fallbackResponse);
-              return;
-            }
-
-            for (const warning of samiValidation.warnings) {
-              console.warn(`[Orchestrator] ${warning}`);
-            }
-
-            handlers.onDone(assistantResponseInSami);
+            // Signal completion - onPartial calls already sent translated content
+            console.log('[Orchestrator] Streaming translation complete');
+            console.log('[Orchestrator] Stage 3 (stream): Sami output validation skipped (done incrementally)');
+            
+            handlers.onDone(''); // Empty to signal completion without overwriting partial updates
           },
           onError: (err: Error) => {
             handlers.onError(err);

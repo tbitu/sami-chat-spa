@@ -186,12 +186,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         };
         setMessages(prev => [...prev, startAssistant]);
 
+        let samiBuffer = '';
+
         await onStreamMessage(messageToSend, preserveFormatting, {
-          onPartial: (_chunk: string) => {
-            // Currently not used - streaming happens at onDone with complete response
+          onPartial: (chunk: string) => {
+            samiBuffer += chunk;
+            setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: sanitizePlaceholders(samiBuffer) } : m));
           },
           onDone: (finalText: string) => {
-            setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: sanitizePlaceholders(finalText) } : m));
+            // If finalText is provided (error case), use it; otherwise keep accumulated buffer
+            if (finalText && finalText.trim().length > 0) {
+              setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: sanitizePlaceholders(finalText) } : m));
+            }
           },
           onError: (err: Error) => {
             const errorMessage: DisplayMessage = {
