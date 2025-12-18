@@ -1,6 +1,7 @@
 // Chat orchestration service
 import { AIProvider, AIService, Message, ChatSession, StreamingHandlers } from '../types/chat';
 import { sanitizePlaceholders } from '../utils/markdown';
+import { normalizeTranslatedSpacing } from '../utils/markdown';
 import { GeminiService } from './gemini';
 import { ChatGPTService } from './chatgpt';
 import { translateWithMarkdown } from './translation';
@@ -454,19 +455,32 @@ export class ChatOrchestrator {
               if (line.length > MAX_LIST_ITEM_LENGTH) {
                 console.log(`[Orchestrator] List item too long (${line.length} chars), splitting into sentences`);
                 
-                // Split by sentence boundaries (. ! ?) while preserving the list marker
+                // Split by sentence boundaries while preserving the list marker
                 const listMarkerMatch = line.match(/^(\s*(?:\d+\.|[-*+]|\[[ xX]\])\s*)/);
                 const marker = listMarkerMatch ? listMarkerMatch[0] : '';
                 const content = line.substring(marker.length);
                 
-                // Split into sentences
-                const sentences = content.split(/([.!?]\s+)/).filter(s => s.trim().length > 0);
-                const translatedParts: string[] = [];
+                // Split on sentence boundaries: period/exclamation/question mark followed by space and capital
+                // This preserves the punctuation with the sentence
+                const sentenceRegex = /(?<=[.!?])\s+(?=[A-ZČĐŊŠŦŽÄÖØÅÆ])/;
+                const sentences = content.split(sentenceRegex);
                 
-                // Translate first part with marker
-                if (sentences.length > 0) {
-                  const firstPart = marker + sentences[0] + (sentences[1] || '');
+                if (sentences.length <= 1) {
+                  // Couldn't split meaningfully, translate as whole
+                  translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                  const artifactCheck = detectTranslationArtifacts(translated);
+                  if (!artifactCheck.isValid) {
+                    console.warn('[Orchestrator] Artifact in long item (no split), using Finnish');
+                    translated = line;
+                  }
+                } else {
+                  console.log(`[Orchestrator] Split into ${sentences.length} sentences`);
+                  const translatedParts: string[] = [];
+                  
+                  // Translate first sentence with marker
+                  const firstPart = marker + sentences[0];
                   let firstTranslated = await translateWithMarkdown(firstPart, 'fin-sami', preserveFormatting);
+                  firstTranslated = normalizeTranslatedSpacing(firstTranslated);
                   
                   const artifactCheck1 = detectTranslationArtifacts(firstTranslated);
                   if (!artifactCheck1.isValid) {
@@ -476,23 +490,26 @@ export class ChatOrchestrator {
                   translatedParts.push(firstTranslated);
                   
                   // Translate remaining sentences
-                  for (let i = 2; i < sentences.length; i += 2) {
-                    const sentence = sentences[i] + (sentences[i + 1] || '');
+                  for (let i = 1; i < sentences.length; i++) {
+                    const sentence = sentences[i];
                     let sentenceTranslated = await translateWithMarkdown(sentence, 'fin-sami', preserveFormatting);
+                    sentenceTranslated = normalizeTranslatedSpacing(sentenceTranslated);
                     
                     const artifactCheck = detectTranslationArtifacts(sentenceTranslated);
                     if (!artifactCheck.isValid) {
-                      console.warn('[Orchestrator] Artifact in sentence, using Finnish');
+                      console.warn(`[Orchestrator] Artifact in sentence ${i}, using Finnish`);
                       sentenceTranslated = sentence;
                     }
-                    translatedParts.push(' ' + sentenceTranslated);
+                    translatedParts.push(sentenceTranslated);
                   }
+                  
+                  // Join with space
+                  translated = translatedParts.join(' ');
                 }
-                
-                translated = translatedParts.join('');
               } else {
                 // Normal length - translate as one unit
                 translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                translated = normalizeTranslatedSpacing(translated);
                 
                 // Check for artifacts in list items
                 const artifactCheck = detectTranslationArtifacts(translated);
@@ -503,6 +520,7 @@ export class ChatOrchestrator {
                   try {
                     await new Promise(resolve => setTimeout(resolve, 300));
                     translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                    translated = normalizeTranslatedSpacing(translated);
                     
                     const retryCheck = detectTranslationArtifacts(translated);
                     if (!retryCheck.isValid) {
@@ -526,6 +544,7 @@ export class ChatOrchestrator {
           // Code blocks and tables: translate as single block
           const blockText = linesToTranslate.join('\n');
           let translated = await translateWithMarkdown(blockText, 'fin-sami', preserveFormatting);
+          translated = normalizeTranslatedSpacing(translated);
           
           // Check for artifacts in blocks
           const artifactCheck = detectTranslationArtifacts(translated);
@@ -536,6 +555,7 @@ export class ChatOrchestrator {
             try {
               await new Promise(resolve => setTimeout(resolve, 300));
               translated = await translateWithMarkdown(blockText, 'fin-sami', preserveFormatting);
+              translated = normalizeTranslatedSpacing(translated);
               
               const retryCheck = detectTranslationArtifacts(translated);
               if (!retryCheck.isValid) {
@@ -638,6 +658,7 @@ export class ChatOrchestrator {
               await flushStructuredBlock();
               try {
                 let translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                translated = normalizeTranslatedSpacing(translated);
                 
                 // Check for artifacts and retry if needed
                 const artifactCheck = detectTranslationArtifacts(translated);
@@ -649,6 +670,7 @@ export class ChatOrchestrator {
                   try {
                     await new Promise(resolve => setTimeout(resolve, 300));
                     translated = await translateWithMarkdown(line, 'fin-sami', preserveFormatting);
+                    translated = normalizeTranslatedSpacing(translated);
                     
                     // Check again
                     const retryCheck = detectTranslationArtifacts(translated);
@@ -694,6 +716,7 @@ export class ChatOrchestrator {
                   try {
                     await new Promise(resolve => setTimeout(resolve, 300));
                     translated = await translateWithMarkdown(pendingLines, 'fin-sami', preserveFormatting);
+                    translated = normalizeTranslatedSpacing(translated);
                     
                     const retryCheck = detectTranslationArtifacts(translated);
                     if (!retryCheck.isValid) {

@@ -204,6 +204,31 @@ function normalizeBulletSpacing(text: string): string {
   return withLineBreaks.replace(/(^|\n)[ \t]*•[ \t]*/g, (_match, prefix) => `${prefix}• `);
 }
 
+/**
+ * Ensure proper spacing after translation
+ * LLMs often strip newlines and spacing, so we need to add them back
+ * based on context clues
+ */
+export function normalizeTranslatedSpacing(text: string): string {
+  if (!text) return text;
+  
+  let result = text.trim();
+  
+  // Ensure numbered lists have proper spacing: "text.2. Item" -> "text.\n2. Item"
+  // Match: non-whitespace followed by period/punctuation, then digit-dot-space pattern
+  result = result.replace(/([^\s])\.(\d+\.\s)/g, '$1.\n$2');
+  result = result.replace(/([^\s])([-*+]\s)/g, '$1\n$2');
+  
+  // Fix missing space before headings: "text# Heading" -> "text\n# Heading"  
+  result = result.replace(/([^\s\n])(#{1,6}\s)/g, '$1\n$2');
+  
+  // Ensure space after sentence-ending punctuation before capitals
+  // "text.NextSentence" -> "text. NextSentence"
+  result = result.replace(/([.!?])([A-ZČĐŊŠŦŽÄÖØÅÆ])/g, '$1 $2');
+  
+  return result;
+}
+
 export function restoreInlineMarkdown(text: string, inlineElements: InlineMarkdown[]): string {
   let result = text;
 
