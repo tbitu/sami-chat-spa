@@ -51,7 +51,7 @@ const PUBLIC_TARTUNLP_API = 'https://api.tartunlp.ai/translation/v2';
 // Client-side retry and timeout configuration
 const MAX_RETRIES = 3; // Retry up to 3 times for transient errors
 const CLIENT_TIMEOUT_MS = 25000; // Abort fetch after 25s on the client side
-const MAX_UNITS_PER_BATCH = 24; // Limit pipe-joined units per request to reduce LLM drift
+const MAX_UNITS_PER_BATCH = 10; // Limit pipe-joined units per request to reduce LLM drift
 
 export type TranslationDirection = 'sami-fin' | 'fin-sami';
 
