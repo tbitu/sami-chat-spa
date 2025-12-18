@@ -419,6 +419,8 @@ export class ChatOrchestrator {
     let pendingLines = '';
     let structuredBuffer: string[] = []; // Buffer for lists/tables/code blocks
     let inStructuredBlock: 'list' | 'table' | 'code' | null = null;
+    let pendingTranslations = 0; // Track ongoing translation work
+    let llmDone = false; // Track if LLM has finished streaming
 
     // Helper to check line types
     const isListStart = (line: string) => /^\s*(\d+\.|[-*+]|\[[ xX]\])\s/.test(line);
@@ -426,6 +428,14 @@ export class ChatOrchestrator {
     const isCodeBlockMarker = (line: string) => /^\s*```/.test(line) || /^\s*~~~/.test(line);
 
     let isFlushingBlock = false; // Guard against concurrent flushes
+    
+    // Helper to signal completion when all work is done
+    const checkCompletion = () => {
+      if (llmDone && pendingTranslations === 0 && !isFlushingBlock) {
+        console.log('[Orchestrator] All translations complete, signaling done');
+        handlers.onDone('');
+      }
+    };
     
     const flushStructuredBlock = async () => {
       if (structuredBuffer.length === 0 || isFlushingBlock) {
@@ -443,7 +453,9 @@ export class ChatOrchestrator {
       try {
         console.log(`[Orchestrator] Flushing ${blockType} block (${linesToTranslate.length} lines)`);
         
-        // For lists: translate each item individually to avoid pipe separator corruption
+        pendingTranslations++;
+        try {
+          // For lists: translate each item individually to avoid pipe separator corruption
         // For code/tables: translate as a single block to preserve structure
         if (blockType === 'list') {
           for (const line of linesToTranslate) {
@@ -627,6 +639,8 @@ export class ChatOrchestrator {
         console.warn(`[Orchestrator] ${blockType} block translation failed:`, err);
       } finally {
         isFlushingBlock = false;
+        pendingTranslations--;
+        checkCompletion();
       }
     };
 
@@ -707,6 +721,8 @@ export class ChatOrchestrator {
                 }
               }
 
+              
+              pendingTranslations++;
               // Regular line - flush any block and translate
               await flushStructuredBlock();
               try {
@@ -742,16 +758,22 @@ export class ChatOrchestrator {
                 
                 handlers.onPartial(translated + '\n');
               } catch (err) {
-                console.warn('[Orchestrator] Line translation failed:', err);
-                handlers.onPartial(' ' + line + '\n'); // Fallback with space
-              }
-            }
-          },
-          onDone: async (finalFinnish: string) => {
+                finally {
+                pendingTranslations--;
+                checkCompletion();
+              } console.warn('[Orchestrator] Line translation failed:', err);
+            llmDone = true; // Mark LLM as finished
+            
             const assistantFinnish = (finalFinnish && finalFinnish.trim().length > 0)
               ? finalFinnish
               : finnishBuffer;
 
+            // Flush any remaining structured block
+            await flushStructuredBlock();
+
+            // Translate any remaining incomplete line
+            if (pendingLines.trim().length > 0) {
+              pendingTranslations++;
             // Flush any remaining structured block
             await flushStructuredBlock();
 
