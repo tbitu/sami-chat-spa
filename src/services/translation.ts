@@ -9,6 +9,7 @@ import {
   hasMarkdown,
   sanitizePlaceholders,
 } from '../utils/markdown.ts';
+import { detectTranslationArtifacts } from '../utils/language-detection.ts';
 import type { TranslationConfig } from '../types/chat.ts';
 
 // Default configuration - can be overridden
@@ -265,6 +266,26 @@ async function translateText(
   }
 }
 
+// Retry once more if translation output contains obvious artifacts (e.g., heavy repetition)
+async function translateTextWithArtifactRetry(
+  text: string,
+  direction: TranslationDirection,
+  attempt: number = 0
+): Promise<string> {
+  const translated = await translateText(text, direction);
+  const artifactCheck = detectTranslationArtifacts(translated);
+
+  if (!artifactCheck.isValid && attempt < 1) {
+    const reason = artifactCheck.errors.join('; ');
+    console.warn(`[Translation] Artifact detected (${reason}). Retrying translation (attempt ${attempt + 2}/2)...`);
+    // Short backoff to avoid hammering the service
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return translateTextWithArtifactRetry(text, direction, attempt + 1);
+  }
+
+  return translated;
+}
+
 /**
  * Detect if a translation appears corrupted based on common patterns.
  * Returns true if the translation should be retried.
@@ -309,13 +330,13 @@ export async function translateWithMarkdown(
   // If preserveFormatting is false, skip all segmentation and markdown handling
   // Just translate the entire text as one chunk (LLM is instructed not to use markdown)
   if (!preserveFormatting) {
-    return translateText(text, direction);
+    return translateTextWithArtifactRetry(text, direction);
   }
 
   // Check if text contains markdown
   if (!hasMarkdown(text)) {
-    // Simple translation for plain text
-    return translateText(text, direction);
+    // Simple translation for plain text with artifact guard
+    return translateTextWithArtifactRetry(text, direction);
   }
 
   // Extract markdown segments

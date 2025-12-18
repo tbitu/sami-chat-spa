@@ -366,6 +366,35 @@ export function detectTranslationArtifacts(text: string): ArtifactResult {
     errors.push(`Extremely long words: ${longWords.slice(0, 3).join(', ')}`);
   }
 
+  // Check for repeated tokens (comma/space separated) that dominate the text
+  if (words.length > 0) {
+    const tokenCounts = new Map<string, number>();
+
+    for (const raw of words) {
+      const token = raw
+        .toLowerCase()
+        .replace(/[^a-záčđŋšŧžäöøåæ]/gi, '') // keep letters incl. Nordic diacritics
+        .trim();
+      if (token.length < 3) continue; // skip very short fragments
+      tokenCounts.set(token, (tokenCounts.get(token) ?? 0) + 1);
+    }
+
+    const totalTokens = Array.from(tokenCounts.values()).reduce((a, b) => a + b, 0);
+    const repeatedTokens = Array.from(tokenCounts.entries()).filter(([_, count]) => {
+      if (count < 4) return false; // need at least 4 occurrences
+      if (totalTokens === 0) return false;
+      return count / totalTokens >= 0.25; // the token dominates at least 25% of the text
+    });
+
+    if (repeatedTokens.length > 0) {
+      const preview = repeatedTokens
+        .slice(0, 3)
+        .map(([token, count]) => `${token}×${count}`)
+        .join(', ');
+      errors.push(`Repeated tokens detected: ${preview}`);
+    }
+  }
+
   // Check for repetitive patterns (same chars/substring repeated multiple times)
   // Matches: "aaaaaaa", "samesamesame", "lalala" (3+ char pattern repeated 3+ times)
   const repetitivePattern = /(.{3,})\1{2,}/g;
