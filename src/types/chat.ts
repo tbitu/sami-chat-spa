@@ -23,6 +23,12 @@ export interface ChatSession {
   createdAt: Date;
 }
 
+export interface StreamingHandlers {
+  onPartial: (chunk: string) => void;
+  onDone: (finalText: string) => void;
+  onError: (err: Error) => void;
+}
+
 export interface AIProviderConfig {
   apiKey: string;
 }
@@ -40,4 +46,10 @@ export interface AIService {
     messages: Message[],
     systemInstruction: string
   ): Promise<string>;
+
+  streamMessage?(
+    messages: Message[],
+    systemInstruction: string,
+    handlers: StreamingHandlers
+  ): Promise<void>;
 }

@@ -2,14 +2,13 @@
 import {
   extractMarkdownSegments,
   reconstructFromSegments,
-  
-  extractTranslationUnits,
   reconstructSegmentsFromUnits,
-  ExportedTranslationUnit as TranslationUnit,
   hasMarkdown,
   sanitizePlaceholders,
+  extractTranslationUnits,
 } from '../utils/markdown.ts';
 import { detectTranslationArtifacts } from '../utils/language-detection.ts';
+import type { ExportedTranslationUnit as TranslationUnit } from '../utils/markdown.ts';
 import type { TranslationConfig } from '../types/chat.ts';
 
 // Default configuration - can be overridden
@@ -343,19 +342,17 @@ export async function translateWithMarkdown(
   // Extract markdown segments
   const segments = extractMarkdownSegments(text);
   // Build translation units (no placeholders)
-  const units = extractTranslationUnits(segments);
+  const translationUnits = extractTranslationUnits(segments);
 
-  if (units.length === 0) return text;
+  if (translationUnits.length === 0) return text;
 
   // We'll translate per-segment for units: gather units per segmentIndex
   const unitsBySegment = new Map<number, TranslationUnit[]>();
-  for (const u of units) {
+  for (const u of translationUnits) {
     const arr = unitsBySegment.get(u.segmentIndex) || [];
     arr.push(u);
     unitsBySegment.set(u.segmentIndex, arr);
   }
-
-  // Map to store translated unit text: key `${segmentIndex}:${tokenIndex}`
   const translatedUnits = new Map<string, string>();
 
   for (const [segmentIndex, segUnits] of unitsBySegment.entries()) {

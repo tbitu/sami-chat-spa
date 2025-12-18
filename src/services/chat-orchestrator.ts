@@ -1,5 +1,5 @@
 // Chat orchestration service
-import { AIProvider, AIService, Message, ChatSession } from '../types/chat';
+import { AIProvider, AIService, Message, ChatSession, StreamingHandlers } from '../types/chat';
 import { sanitizePlaceholders } from '../utils/markdown';
 import { GeminiService } from './gemini';
 import { ChatGPTService } from './chatgpt';
@@ -305,6 +305,198 @@ export class ChatOrchestrator {
     }
 
     return assistantResponseInSami;
+  }
+
+  async streamMessage(
+    userMessageInSami: string,
+    preserveFormatting: boolean = false,
+    handlers: StreamingHandlers
+  ): Promise<void> {
+    if (!this.currentSession) {
+      throw new Error('No active session. Create a session first.');
+    }
+
+    console.log('[Orchestrator] streamMessage preserveFormatting:', preserveFormatting);
+
+    console.log('[Orchestrator] Stage 1: Detecting input language (stream)...');
+    const inputLangDetection = detectLanguage(userMessageInSami);
+    console.log(`[Orchestrator] Detected: ${inputLangDetection.language} (confidence: ${inputLangDetection.confidence.toFixed(2)})`);
+
+    let userMessageInFinnish: string;
+
+    if (!shouldTranslate(userMessageInSami)) {
+      console.log(`[Orchestrator] Input is ${inputLangDetection.language}, bypassing sme→fin translation`);
+      userMessageInFinnish = userMessageInSami;
+    } else {
+      console.log('[Orchestrator] Input is Sami or unknown, translating to Finnish...');
+      userMessageInFinnish = await translateWithMarkdown(
+        userMessageInSami,
+        'sami-fin',
+        preserveFormatting
+      );
+    }
+
+    if (!preserveFormatting) {
+      userMessageInFinnish += '\n\nVastaa pelkkänä tekstinä ilman markdown-muotoilua (ei lihavointia, kursivointia, otsikoita, taulukoita tai koodilohkoja).';
+    }
+
+    const userMessage: Message = {
+      role: 'user',
+      content: userMessageInFinnish,
+    };
+    this.currentSession.messages.push(userMessage);
+
+    const service = this.getService(this.currentSession.provider);
+
+    // If the provider does not support streaming, fall back to the non-streaming path
+    if (!service.streamMessage) {
+      console.log('[Orchestrator] Provider lacks streamMessage, using buffered flow');
+      const assistantResponseInFinnish = await service.sendMessage(
+        this.currentSession.messages,
+        this.currentSession.systemInstruction
+      );
+
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: assistantResponseInFinnish,
+      };
+      this.currentSession.messages.push(assistantMessage);
+      saveSessionToStorage(this.currentSession);
+
+      console.log('[Orchestrator] Stage 2: Validating Finnish output (non-stream fallback)...');
+      const finnishValidation = validateFinnishOutput(assistantResponseInFinnish, FINNISH_CONFIDENCE_THRESHOLD);
+      if (!finnishValidation.isValid) {
+        console.warn('[Orchestrator] LLM language validation failed (fallback, no-retry):', finnishValidation.errors);
+        console.warn(`[Orchestrator] Detected language: ${finnishValidation.language}, confidence: ${finnishValidation.confidence.toFixed(2)}`);
+        for (const w of finnishValidation.warnings) console.warn('[Orchestrator]', w);
+      }
+
+      console.log('[Orchestrator] Translating buffered response fin→sami...');
+      const assistantResponseInSami = await translateWithMarkdown(
+        assistantResponseInFinnish,
+        'fin-sami',
+        preserveFormatting
+      );
+
+      console.log('[Orchestrator] Stage 3: Validating Sami output (fallback)...');
+      const samiValidation = validateSamiOutput(assistantResponseInSami);
+
+      if (!samiValidation.isValid) {
+        console.error('[Orchestrator] Sami output invalid (fallback):', samiValidation.errors);
+
+        const localized = i18n.t('errors.fallbackWarning', { errors: samiValidation.errors.join('; ') });
+        let warningToShow = localized as string;
+        try {
+          const translatedWarning = await translateWithMarkdown(localized as string, 'fin-sami', preserveFormatting);
+          if (translatedWarning && translatedWarning.trim().length > 0) {
+            warningToShow = translatedWarning;
+          }
+        } catch (err) {
+          console.warn('[Orchestrator] Warning translation failed (fallback), using localized warning:', err);
+        }
+
+        const WARNING_START = '@@WARNING_START@@';
+        const WARNING_END = '@@WARNING_END@@';
+        const fallbackResponse = `${WARNING_START}${warningToShow}${WARNING_END}\n\n${assistantResponseInSami}`;
+
+        handlers.onPartial(fallbackResponse);
+        handlers.onDone(fallbackResponse);
+        return;
+      }
+
+      for (const warning of samiValidation.warnings) {
+        console.warn(`[Orchestrator] ${warning}`);
+      }
+
+      handlers.onPartial(assistantResponseInSami);
+      handlers.onDone(assistantResponseInSami);
+      return;
+    }
+
+    let finnishBuffer = '';
+
+    try {
+      await service.streamMessage(
+        this.currentSession.messages,
+        this.currentSession.systemInstruction,
+        {
+          onPartial: async (chunk: string) => {
+            finnishBuffer += chunk;
+            try {
+              const translatedChunk = await translateWithMarkdown(chunk, 'fin-sami', preserveFormatting);
+              handlers.onPartial(translatedChunk);
+            } catch (err) {
+              console.warn('[Orchestrator] Partial translation failed, skipping chunk:', err);
+            }
+          },
+          onDone: async (finalFinnish: string) => {
+            const assistantFinnish = (finalFinnish && finalFinnish.trim().length > 0)
+              ? finalFinnish
+              : finnishBuffer;
+
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: assistantFinnish,
+            };
+            this.currentSession!.messages.push(assistantMessage);
+
+            // Stage 2: Validate Finnish output (no retries)
+            console.log('[Orchestrator] Stage 2 (stream): Validating Finnish output...');
+            const finnishValidation = validateFinnishOutput(assistantFinnish, FINNISH_CONFIDENCE_THRESHOLD);
+            if (!finnishValidation.isValid) {
+              console.warn('[Orchestrator] LLM language validation failed (stream no-retry):', finnishValidation.errors);
+              console.warn(`[Orchestrator] Detected language: ${finnishValidation.language}, confidence: ${finnishValidation.confidence.toFixed(2)}`);
+              for (const w of finnishValidation.warnings) console.warn('[Orchestrator]', w);
+            }
+
+            saveSessionToStorage(this.currentSession!);
+
+            console.log('[Orchestrator] Translating streamed response fin→sami...');
+            const assistantResponseInSami = await translateWithMarkdown(
+              assistantFinnish,
+              'fin-sami',
+              preserveFormatting
+            );
+
+            console.log('[Orchestrator] Stage 3 (stream): Validating Sami output...');
+            const samiValidation = validateSamiOutput(assistantResponseInSami);
+
+            if (!samiValidation.isValid) {
+              console.error('[Orchestrator] Sami output invalid (stream):', samiValidation.errors);
+
+              const localized = i18n.t('errors.fallbackWarning', { errors: samiValidation.errors.join('; ') });
+              let warningToShow = localized as string;
+              try {
+                const translatedWarning = await translateWithMarkdown(localized as string, 'fin-sami', preserveFormatting);
+                if (translatedWarning && translatedWarning.trim().length > 0) {
+                  warningToShow = translatedWarning;
+                }
+              } catch (err) {
+                console.warn('[Orchestrator] Warning translation failed (stream), using localized warning:', err);
+              }
+
+              const WARNING_START = '@@WARNING_START@@';
+              const WARNING_END = '@@WARNING_END@@';
+              const fallbackResponse = `${WARNING_START}${warningToShow}${WARNING_END}\n\n${assistantResponseInSami}`;
+
+              handlers.onDone(fallbackResponse);
+              return;
+            }
+
+            for (const warning of samiValidation.warnings) {
+              console.warn(`[Orchestrator] ${warning}`);
+            }
+
+            handlers.onDone(assistantResponseInSami);
+          },
+          onError: (err: Error) => {
+            handlers.onError(err);
+          },
+        }
+      );
+    } catch (err) {
+      handlers.onError(err instanceof Error ? err : new Error(String(err)));
+    }
   }
 
   getMessageHistory(): Message[] {

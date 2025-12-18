@@ -84,7 +84,7 @@ function extractOpenAIContent(content) {
   return '';
 }
 
-async function proxyChatGPT(body) {
+async function proxyChatGPT(body, res, stream = true, abortSignal) {
   if (!openaiKey) {
     return { status: 501, payload: { error: 'ChatGPT proxy not configured' } };
   }
@@ -106,6 +106,7 @@ async function proxyChatGPT(body) {
   const requestBody = {
     model: typeof model === 'string' && model.trim() ? model.trim() : openaiModel,
     messages: prepared,
+    stream,
   };
 
   const response = await fetch(OPENAI_URL, {
@@ -115,27 +116,61 @@ async function proxyChatGPT(body) {
       'Authorization': `Bearer ${openaiKey}`,
     },
     body: JSON.stringify(requestBody),
+    signal: abortSignal,
   });
 
-  const text = await response.text();
-  if (!response.ok) {
+  if (!stream) {
+    const text = await response.text();
+    if (!response.ok) {
+      return { status: response.status, payload: { error: `OpenAI error: ${response.statusText}`, body: text } };
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (err) {
+      return { status: 502, payload: { error: 'Failed to parse OpenAI response' } };
+    }
+    const choice = data?.choices?.[0]?.message?.content;
+    const content = extractOpenAIContent(choice);
+    if (!content) {
+      return { status: 502, payload: { error: 'No content returned from OpenAI' } };
+    }
+    return { status: 200, payload: { content } };
+  }
+
+  // Streaming path: relay SSE-like chunks to client
+  if (!response.ok || !response.body) {
+    const text = await response.text().catch(() => '');
     return { status: response.status, payload: { error: `OpenAI error: ${response.statusText}`, body: text } };
   }
 
-  let data;
+  writeCorsHeaders(res);
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no', // Nginx/Apache-friendly hint
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+
   try {
-    data = JSON.parse(text);
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        const chunk = decoder.decode(value, { stream: true });
+        res.write(chunk);
+      }
+    }
   } catch (err) {
-    return { status: 502, payload: { error: 'Failed to parse OpenAI response' } };
+    // client aborts will surface here; swallow quietly
+  } finally {
+    res.end();
   }
 
-  const choice = data?.choices?.[0]?.message?.content;
-  const content = extractOpenAIContent(choice);
-  if (!content) {
-    return { status: 502, payload: { error: 'No content returned from OpenAI' } };
-  }
-
-  return { status: 200, payload: { content } };
+  return null; // streamed response already sent
 }
 
 function convertToGeminiMessages(messages = []) {
@@ -224,8 +259,13 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/proxy/chatgpt' && req.method === 'POST') {
     try {
       const body = await readBody(req);
-      const result = await proxyChatGPT(body);
-      sendJson(res, result.status, result.payload);
+      const stream = body?.stream !== false; // default: streaming on
+      const abortController = new AbortController();
+      req.on('close', () => abortController.abort());
+      const result = await proxyChatGPT(body, res, stream, abortController.signal);
+      if (result) {
+        sendJson(res, result.status, result.payload);
+      }
     } catch (err) {
       sendJson(res, 500, { error: 'Unexpected error', message: err?.message || String(err) });
     }

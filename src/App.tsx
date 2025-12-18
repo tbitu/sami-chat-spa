@@ -234,6 +234,15 @@ function App() {
     <div>
       <ChatInterface
         onSendMessage={handleSendMessage}
+        onStreamMessage={async (message, preserveFormatting, handlers) => {
+          if (!orchestrator) throw new Error('Orchestrator not initialized');
+          setIsLoading(true);
+          try {
+            await orchestrator.streamMessage(message, preserveFormatting, handlers);
+          } finally {
+            setIsLoading(false);
+          }
+        }}
         isLoading={isLoading}
         onClearSession={() => {
           if (orchestrator) {

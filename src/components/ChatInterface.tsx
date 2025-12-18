@@ -14,6 +14,15 @@ interface DisplayMessage {
 
 interface ChatInterfaceProps {
   onSendMessage: (message: string, preserveFormatting?: boolean) => Promise<string>;
+  onStreamMessage?: (
+    message: string,
+    preserveFormatting: boolean | undefined,
+    handlers: {
+      onPartial: (chunk: string) => void;
+      onDone: (finalText: string) => void;
+      onError: (err: Error) => void;
+    }
+  ) => Promise<void>;
   isLoading: boolean;
   onClearSession?: () => void;
   onNewConversation?: () => void;
@@ -69,6 +78,7 @@ function clearDisplayMessages(): void {
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onSendMessage,
+  onStreamMessage,
   isLoading,
   onClearSession,
   onNewConversation,
@@ -159,25 +169,58 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     setMessages(prev => [...prev, userMessage]);
     const messageToSend = input; // Store before clearing
-  setInput('');
-  // keep focus in the input after sending
-  inputRef.current?.focus();
+    setInput('');
+    // keep focus in the input after sending
+    inputRef.current?.focus();
 
     console.log('[ChatInterface] Calling onSendMessage with preserveFormatting:', preserveFormatting);
     
     try {
-      const response = await onSendMessage(messageToSend, preserveFormatting);
-      
-      console.log('[ChatInterface] onSendMessage completed');
-      
-      // Add assistant response
-      const assistantMessage: DisplayMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: sanitizePlaceholders(response),
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, assistantMessage]);
+      if (onStreamMessage) {
+        const assistantId = crypto.randomUUID();
+        const startAssistant: DisplayMessage = {
+          id: assistantId,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, startAssistant]);
+
+        let buffered = '';
+
+        await onStreamMessage(messageToSend, preserveFormatting, {
+          onPartial: (chunk: string) => {
+            buffered += chunk;
+            setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: sanitizePlaceholders(buffered) } : m));
+          },
+          onDone: (finalText: string) => {
+            buffered = finalText;
+            setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: sanitizePlaceholders(finalText) } : m));
+          },
+          onError: (err: Error) => {
+            const errorMessage: DisplayMessage = {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: `Meattáhus čuožžilii: ${err.message}`,
+              timestamp: new Date(),
+            };
+            setMessages(prev => [...prev, errorMessage]);
+          },
+        });
+      } else {
+        const response = await onSendMessage(messageToSend, preserveFormatting);
+        
+        console.log('[ChatInterface] onSendMessage completed');
+        
+        // Add assistant response
+        const assistantMessage: DisplayMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: sanitizePlaceholders(response),
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+      }
     } catch (error) {
       console.error('[ChatInterface] Error sending message:', error);
       

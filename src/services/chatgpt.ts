@@ -1,5 +1,5 @@
 // ChatGPT (OpenAI) API Service
-import { AIService, Message } from '../types/chat';
+import { AIService, Message, StreamingHandlers } from '../types/chat';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models';
@@ -198,12 +198,14 @@ export class ChatGPTService implements AIService {
       messages: preparedMessages,
     };
 
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.apiKey}`,
+    };
+
     const response = await fetch(OPENAI_API_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-      },
+      headers,
       body: JSON.stringify(request),
     });
 
@@ -245,6 +247,25 @@ export class ChatGPTService implements AIService {
     return content;
   }
 
+  async streamMessage(
+    messages: Message[],
+    systemInstruction: string,
+    handlers: StreamingHandlers
+  ): Promise<void> {
+    if (this.mode === 'proxy') {
+      await this.sendViaProxyStreaming(messages, systemInstruction, handlers);
+      return;
+    }
+
+    try {
+      const full = await this.sendMessage(messages, systemInstruction);
+      handlers.onPartial(full);
+      handlers.onDone(full);
+    } catch (err) {
+      handlers.onError(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
   private async sendViaProxy(
     messages: Message[],
     systemInstruction: string
@@ -263,8 +284,19 @@ export class ChatGPTService implements AIService {
       body: JSON.stringify({
         model: this.model,
         messages: preparedMessages,
+        stream: true,
       }),
     });
+
+    // Try streaming first if the proxy/OpenAI responded with an event stream
+    const contentType = response.headers.get('content-type') || '';
+    if (response.ok && response.body && contentType.includes('text/event-stream')) {
+      try {
+        return await this.consumeSseStream(response.body);
+      } catch (err) {
+        console.warn('[ChatGPT] Proxy streaming parse failed, falling back to buffered JSON:', err);
+      }
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -285,6 +317,57 @@ export class ChatGPTService implements AIService {
     }
 
     throw new Error('Proxy ChatGPT returned no content');
+  }
+
+  private async sendViaProxyStreaming(
+    messages: Message[],
+    systemInstruction: string,
+    handlers: StreamingHandlers
+  ): Promise<void> {
+    const target = this.buildProxyUrl('api/proxy/chatgpt');
+
+    const preparedMessages = this.prepareMessages(messages, systemInstruction);
+
+    const response = await fetch(target, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: preparedMessages,
+        stream: true,
+      }),
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    if (response.ok && response.body && contentType.includes('text/event-stream')) {
+      await this.consumeSseStreamWithHandlers(response.body, handlers);
+      return;
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      handlers.onError(new Error(`Proxy ChatGPT error: ${response.status} ${response.statusText} - ${errorText}`));
+      return;
+    }
+
+    const data = await response.json() as { content?: string; choices?: { message?: { content?: string | OpenAIResponsePart[] } }[] };
+
+    let content: string | undefined;
+    if (data.content && typeof data.content === 'string') {
+      content = data.content;
+    } else if (Array.isArray(data.choices) && data.choices.length > 0) {
+      content = this.extractMessageText(data.choices[0]?.message?.content as string | OpenAIResponsePart[] | undefined);
+    }
+
+    if (content) {
+      handlers.onPartial(content);
+      handlers.onDone(content);
+      return;
+    }
+
+    handlers.onError(new Error('Proxy ChatGPT returned no content'));
   }
 
   private buildProxyUrl(path: string): string {
@@ -314,5 +397,133 @@ export class ChatGPTService implements AIService {
     }
 
     return '';
+  }
+
+  private async consumeSseStream(body: ReadableStream<Uint8Array>): Promise<string> {
+    const reader = body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let fullText = '';
+
+    let finished = false;
+    while (!finished) {
+      const { done, value } = await reader.read();
+      finished = done;
+      if (done) break;
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const payload = trimmed.replace(/^data:\s*/, '');
+          if (payload === '[DONE]') continue;
+          try {
+            const json = JSON.parse(payload) as {
+              choices?: { delta?: { content?: { text?: string }[] } }[];
+              message?: { content?: string };
+              content?: string;
+            };
+            // Handle both OpenAI delta shape and proxy-wrapped content
+            const delta = json.choices?.[0]?.delta?.content?.[0]?.text || json.content || json.message?.content || '';
+            if (delta) fullText += delta;
+          } catch (err) {
+            console.warn('[ChatGPT] Failed to parse SSE chunk:', err);
+          }
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      try {
+        const json = JSON.parse(buffer.replace(/^data:\s*/, '')) as {
+          choices?: { delta?: { content?: { text?: string }[] } }[];
+          message?: { content?: string };
+          content?: string;
+        };
+        const delta = json.choices?.[0]?.delta?.content?.[0]?.text || json.content || json.message?.content || '';
+        if (delta) fullText += delta;
+      } catch {
+        // ignore trailing parse issues
+      }
+    }
+
+    return fullText.trim();
+  }
+
+  private async consumeSseStreamWithHandlers(
+    body: ReadableStream<Uint8Array>,
+    handlers: StreamingHandlers
+  ): Promise<void> {
+    const reader = body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let fullText = '';
+
+    let finished = false;
+    while (!finished) {
+      const { done, value } = await reader.read();
+      finished = done;
+      if (done) break;
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const payload = trimmed.replace(/^data:\s*/, '');
+          if (payload === '[DONE]') continue;
+          try {
+            const json = JSON.parse(payload) as {
+              choices?: { delta?: { content?: { text?: string }[] } }[];
+              message?: { content?: string };
+              content?: string;
+            };
+            const delta = json.choices?.[0]?.delta?.content?.[0]?.text || json.content || json.message?.content || '';
+            if (delta) {
+              fullText += delta;
+              try {
+                handlers.onPartial(delta);
+              } catch (err) {
+                console.warn('[ChatGPT] onPartial handler failed:', err);
+              }
+            }
+          } catch (err) {
+            console.warn('[ChatGPT] Failed to parse SSE chunk:', err);
+          }
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      try {
+        const json = JSON.parse(buffer.replace(/^data:\s*/, '')) as {
+          choices?: { delta?: { content?: { text?: string }[] } }[];
+          message?: { content?: string };
+          content?: string;
+        };
+        const delta = json.choices?.[0]?.delta?.content?.[0]?.text || json.content || json.message?.content || '';
+        if (delta) {
+          fullText += delta;
+          try {
+            handlers.onPartial(delta);
+          } catch (err) {
+            console.warn('[ChatGPT] onPartial handler failed (tail):', err);
+          }
+        }
+      } catch {
+        // ignore trailing parse issues
+      }
+    }
+
+    try {
+      handlers.onDone(fullText.trim());
+    } catch (err) {
+      console.warn('[ChatGPT] onDone handler failed:', err);
+    }
   }
 }
