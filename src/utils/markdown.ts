@@ -251,6 +251,7 @@ export function restoreInlineMarkdown(text: string, inlineElements: InlineMarkdo
  * Extract markdown segments from text, preserving structure
  */
 export function extractMarkdownSegments(text: string): MarkdownSegment[] {
+  console.log(`[Markdown] extractMarkdownSegments input: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
   const segments: MarkdownSegment[] = [];
   const lines = text.split('\n');
   let inCodeBlock = false;
@@ -445,6 +446,13 @@ export function extractMarkdownSegments(text: string): MarkdownSegment[] {
     pendingText = null;
   }
 
+  console.log(`[Markdown] extractMarkdownSegments output: ${segments.length} segments:`, segments.map(s => ({
+    type: s.type,
+    contentPreview: s.content.substring(0, 50) + (s.content.length > 50 ? '...' : ''),
+    prefix: s.prefix,
+    prefixLines: s.prefixLines
+  })));
+
   // Handle unclosed code block
   if (inCodeBlock && codeBlockContent.length > 0) {
     segments.push({
@@ -460,7 +468,7 @@ export function extractMarkdownSegments(text: string): MarkdownSegment[] {
  * Reconstruct text from markdown segments
  */
 export function reconstructFromSegments(segments: MarkdownSegment[]): string {
-  return segments
+  const result = segments
     .map(segment => {
       if (segment.type === 'code') {
         return segment.content;
@@ -483,6 +491,8 @@ export function reconstructFromSegments(segments: MarkdownSegment[]): string {
       return `${segment.prefix || ''}${segment.content}`;
     })
     .join('\n');
+  console.log(`[Markdown] reconstructFromSegments output: "${result.substring(0, 100)}${result.length > 100 ? '...' : ''}"`);
+  return result;
 }
 
 /**

@@ -709,6 +709,8 @@ export class ChatOrchestrator {
               // List item
               if (isListStart(line)) {
                 const lineListType = getListType(line);
+                console.log(`[Orchestrator] List item detected: type=${lineListType}, inBlock=${inStructuredBlock}, currentType=${currentListType}`);
+                console.log(`[Orchestrator] Line content: "${line.substring(0, 80)}${line.length > 80 ? '...' : ''}"`);
                 if (inStructuredBlock === 'list' && currentListType === lineListType) {
                   // Same list type, add to buffer
                   structuredBuffer.push(line);
@@ -723,16 +725,19 @@ export class ChatOrchestrator {
               } else if (inStructuredBlock === 'list') {
                 // Check if it's a continuation (indented) or end of list
                 if (/^\s{2,}/.test(line)) {
+                  console.log(`[Orchestrator] List continuation (indented): "${line.substring(0, 60)}..."`);
                   structuredBuffer.push(line);
                   continue;
                 } else {
                   // End of list - flush it
+                  console.log(`[Orchestrator] Ending list, non-list line: "${line.substring(0, 80)}${line.length > 80 ? '...' : ''}"`);
                   await flushStructuredBlock();
                 }
               }
 
               
               // Regular line - flush any block and translate
+              console.log(`[Orchestrator] Regular line (not list/table/code): "${line.substring(0, 80)}${line.length > 80 ? '...' : ''}"`);
               await flushStructuredBlock();
               pendingTranslations++;
               try {
