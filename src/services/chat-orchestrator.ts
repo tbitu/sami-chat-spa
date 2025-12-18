@@ -423,17 +423,29 @@ export class ChatOrchestrator {
     const isTableRow = (line: string) => line.trim().startsWith('|') && line.trim().endsWith('|');
     const isCodeBlockMarker = (line: string) => /^\s*```/.test(line) || /^\s*~~~/.test(line);
 
+    let isFlushingBlock = false; // Guard against concurrent flushes
+    
     const flushStructuredBlock = async () => {
-      if (structuredBuffer.length > 0) {
-        const blockText = structuredBuffer.join('\n');
-        try {
-          const translated = await translateWithMarkdown(blockText, 'fin-sami', preserveFormatting);
-          handlers.onPartial(translated + '\n');
-        } catch (err) {
-          console.warn(`[Orchestrator] ${inStructuredBlock} block translation failed:`, err);
-        }
-        structuredBuffer = [];
-        inStructuredBlock = null;
+      if (structuredBuffer.length === 0 || isFlushingBlock) {
+        return; // Already flushing or nothing to flush
+      }
+      
+      isFlushingBlock = true;
+      const blockText = structuredBuffer.join('\n');
+      const blockType = inStructuredBlock;
+      
+      // Clear immediately to prevent re-entrance
+      structuredBuffer = [];
+      inStructuredBlock = null;
+      
+      try {
+        console.log(`[Orchestrator] Flushing ${blockType} block (${blockText.split('\n').length} lines)`);
+        const translated = await translateWithMarkdown(blockText, 'fin-sami', preserveFormatting);
+        handlers.onPartial(translated + '\n');
+      } catch (err) {
+        console.warn(`[Orchestrator] ${blockType} block translation failed:`, err);
+      } finally {
+        isFlushingBlock = false;
       }
     };
 
