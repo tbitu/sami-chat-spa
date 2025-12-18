@@ -251,15 +251,18 @@ export class ChatGPTService implements AIService {
   ): Promise<string> {
     const target = this.buildProxyUrl('api/proxy/chatgpt');
 
+    // Build the same minimal payload we use for direct calls to avoid
+    // unsupported parameter errors. Proxy just forwards to OpenAI.
+    const preparedMessages = this.prepareMessages(messages, systemInstruction);
+
     const response = await fetch(target, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        messages,
-        systemInstruction,
         model: this.model,
+        messages: preparedMessages,
       }),
     });
 
